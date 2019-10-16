@@ -137,9 +137,13 @@ public class BPlusTree {
     public Optional<RecordId> get(DataBox key) {
         typecheck(key);
         // TODO(hw2): implement
+        LeafNode retLeaf = root.get(key);
+        Optional<RecordId> retVal = retLeaf.getKey(key);
+
         // TODO(hw4_part2): B+ tree locking
 
-        return Optional.empty();
+        return retVal;
+        //return Optional.empty();
     }
 
     /**
@@ -192,7 +196,8 @@ public class BPlusTree {
         // TODO(hw2): Return a BPlusTreeIterator.
         // TODO(hw4_part2): B+ tree locking
 
-        return Collections.emptyIterator();
+        LeafNode currLeaf = root.getLeftmostLeaf();
+        return new BPlusTreeIterator(currLeaf, currLeaf.scanAll());
     }
 
     /**
@@ -222,8 +227,8 @@ public class BPlusTree {
         typecheck(key);
         // TODO(hw2): Return a BPlusTreeIterator.
         // TODO(hw4_part2): B+ tree locking
-
-        return Collections.emptyIterator();
+        LeafNode currLeaf = root.get(key);
+        return new BPlusTreeIterator(currLeaf, currLeaf.scanGreaterEqual(key));
     }
 
     /**
@@ -238,9 +243,39 @@ public class BPlusTree {
     public void put(DataBox key, RecordId rid) {
         typecheck(key);
         // TODO(hw2): implement
+
+        /*
+        //raise exception if key already exists
+        Optional<RecordId> check = this.get(key);
+        if (check.isPresent()) {
+            throw new BPlusTreeException("The key already exists in the B+ tree");
+        }
+        */
+
+        Optional<Pair<DataBox, Long>> bubbleValue = root.put(key, rid);
+
+        if (bubbleValue.isPresent()){
+            // if a value was returned then new root must be created
+            List<DataBox> keys = new ArrayList<>();
+            List<Long> children = new ArrayList<>();
+
+            //Bubble up new root key with current root and new root as children
+            keys.add(bubbleValue.get().getFirst());
+            children.add(root.getPage().getPageNum());
+            children.add(bubbleValue.get().getSecond());
+
+            InnerNode newRoot = new InnerNode(metadata, bufferManager, keys, children, lockContext);
+            updateRoot(newRoot);
+            //this.root = newRoot;
+
+        }
+        //else insert (key, rid) pair into B+ tree
+        return;
+
+
         // TODO(hw4_part2): B+ tree locking
 
-        return;
+        //return;
     }
 
     /**
@@ -262,6 +297,33 @@ public class BPlusTree {
         // TODO(hw2): implement
         // TODO(hw4_part2): B+ tree locking
 
+        // only bulkLoad on empty trees
+        if (scanAll().hasNext()) {
+            throw new BPlusTreeException("Tree is not empty");
+        }
+
+        // while values still in iterator
+        while(data.hasNext()){
+            Optional<Pair<DataBox, Long>> bubbleValue = root.bulkLoad(data, fillFactor);
+
+            if (bubbleValue.isPresent()) {
+                // if a value was returned then new root must be created
+                List<DataBox> keys = new ArrayList<>();
+                List<Long> children = new ArrayList<>();
+
+                //Bubble up new root key with current root and new root as children
+                keys.add(bubbleValue.get().getFirst());
+                children.add(root.getPage().getPageNum());
+                children.add(bubbleValue.get().getSecond());
+
+                InnerNode newRoot = new InnerNode(metadata, bufferManager, keys, children, lockContext);
+                updateRoot(newRoot);
+            }
+
+        }
+
+        // if no value was bubbled up
+
         return;
     }
 
@@ -280,6 +342,8 @@ public class BPlusTree {
         typecheck(key);
         // TODO(hw2): implement
         // TODO(hw4_part2): B+ tree locking
+
+        root.remove(key);
 
         return;
     }
@@ -384,18 +448,50 @@ public class BPlusTree {
     private class BPlusTreeIterator implements Iterator<RecordId> {
         // TODO(hw2): Add whatever fields and constructors you want here.
 
+        //fields
+        private LeafNode currLeaf;
+        private Iterator<RecordId> currRids;
+
+
+        //constructor
+        public BPlusTreeIterator(LeafNode currLeaf, Iterator<RecordId> currRids){
+            this.currLeaf = currLeaf;
+            this.currRids = currRids;
+        }
+
         @Override
         public boolean hasNext() {
             // TODO(hw2): implement
 
-            return false;
+            // if there is another rid
+            if (currRids.hasNext()){
+                return true;
+            } else{
+                // if there is another leaf
+                if (currLeaf.getRightSibling().isPresent()){
+                    return currLeaf.getRightSibling().get().scanAll().hasNext();
+                }
+                //otherwise return false
+                return false;
+            }
         }
 
         @Override
         public RecordId next() {
-            // TODO(hw2): implement
-
-            throw new NoSuchElementException();
+            // If there is another rid
+            if (currRids.hasNext()){
+                return currRids.next();
+            } else{
+                // If there is another leaf
+                if (currLeaf.getRightSibling().isPresent()){
+                    this.currLeaf = currLeaf.getRightSibling().get();
+                    this.currRids = currLeaf.scanAll();
+                    return this.currRids.next();
+                    // If not next leaf and no more rids
+                } else{
+                    throw new NoSuchElementException();
+                }
+            }
         }
     }
 }
