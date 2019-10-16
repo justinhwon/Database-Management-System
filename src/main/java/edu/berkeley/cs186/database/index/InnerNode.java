@@ -80,7 +80,12 @@ class InnerNode extends BPlusNode {
     public LeafNode get(DataBox key) {
         // TODO(hw2): implement
 
-        return null;
+        int nextPtrNum = numLessThanEqual(key, this.keys);
+        //long nextPtr = children.get(nextPtrNum);
+        //InnerNode nextNode = fromBytes(this.metadata, this.bufferManager, this.treeContext, nextPtr);
+        //LeafNode nextLeaf = LeafNode.fromBytes(this.metadata, this.bufferManager, this.treeContext, nextPtr);
+        LeafNode leafNode = getChild(nextPtrNum).get(key);
+        return leafNode;
     }
 
     // See BPlusNode.getLeftmostLeaf.
@@ -88,8 +93,8 @@ class InnerNode extends BPlusNode {
     public LeafNode getLeftmostLeaf() {
         assert(children.size() > 0);
         // TODO(hw2): implement
-
-        return null;
+        LeafNode leafNode = getChild(0).getLeftmostLeaf();
+        return leafNode;
     }
 
     // See BPlusNode.put.
@@ -97,7 +102,66 @@ class InnerNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(hw2): implement
 
-        return Optional.empty();
+        // Search down the correct child node
+        int childIndex = numLessThanEqual(key, keys);
+        //LeafNode childMatch = getChild(childIndex);
+        Optional<Pair<DataBox, Long>> bubbleUp = getChild(childIndex).put(key, rid);
+        // If child returns nothing, keep return Optional.empty()
+        if (!bubbleUp.isPresent()){
+            return Optional.empty();
+        }
+        // If child returns a bubbled up key, add to the node
+
+        //get info from bubbled up key
+        int order = metadata.getOrder();
+        DataBox newKey = bubbleUp.get().getFirst();
+        Long newPageNum = bubbleUp.get().getSecond();
+
+        //if no overflow
+        if (keys.size() < order * 2){
+            int index = numLessThan(key, keys);
+            keys.add(index, newKey);
+            children.add(index+1, newPageNum);
+
+            //sync
+            sync();
+            return Optional.empty();
+        }
+        //If overflow
+        //first add the key and child pointer to the Lists
+        int index = numLessThan(newKey, keys);
+        keys.add(index, newKey);
+        children.add(index+1, newPageNum);
+
+        //then split into two nodes with d and d keys
+        List<DataBox> firstNodeKeys = keys.subList(0, order);
+        List<DataBox> newNodeKeys = keys.subList(order+1, (order *2)+1);
+        List<Long> firstChilds = children.subList(0, order+1);
+        List<Long> newChilds = children.subList(order+1, (order *2)+2);
+
+        //save key to be bubbled up and update original node
+        DataBox split_key = keys.get(order);
+        keys = firstNodeKeys;
+        children = firstChilds;
+
+
+        //create new second node
+        InnerNode newNode = new InnerNode(metadata, bufferManager, newNodeKeys, newChilds, treeContext);
+
+        //create pair to return of split key and right node pageNum
+        Long right_node_page_num = newNode.getPage().getPageNum();
+
+        Pair<DataBox, Long> pair = new Pair<>(split_key, right_node_page_num);
+
+        //Optional<Pair<DataBox, Long>> retVal = Optional.of(pair);
+
+        //sync
+        sync();
+
+        return Optional.of(pair);
+
+
+
     }
 
     // See BPlusNode.bulkLoad.
@@ -106,13 +170,80 @@ class InnerNode extends BPlusNode {
             float fillFactor) {
         // TODO(hw2): implement
 
-        return Optional.empty();
+        while(this.keys.size() < 2 * metadata.getOrder()){
+            // no more values in iterator
+            if (!data.hasNext()){
+                sync();
+                return Optional.empty();
+            }
+
+            int rightMostNode = this.children.size() - 1;
+            Optional<Pair<DataBox, Long>> bubbleValue = getChild(rightMostNode).bulkLoad(data, fillFactor);
+
+            // if no bubbled value
+            if (!bubbleValue.isPresent()){
+                sync();
+                return Optional.empty();
+            }
+            //else add bubbled value to node
+            // If child returns a bubbled up key, add to the node
+
+            //get info from bubbled up key
+            DataBox newKey = bubbleValue.get().getFirst();
+            Long newPageNum = bubbleValue.get().getSecond();
+
+            keys.add(newKey);
+            children.add(newPageNum);
+
+        }
+        //no more values in iterator
+        if (!data.hasNext()){
+            sync();
+            return Optional.empty();
+        }
+
+        int rightMostNode = this.children.size() - 1;
+        Optional<Pair<DataBox, Long>> bubbleValue = getChild(rightMostNode).bulkLoad(data, fillFactor);
+
+        // if no bubbled value return Optional.empty
+        if (!bubbleValue.isPresent()){
+            sync();
+            return Optional.empty();
+        }
+        int order = metadata.getOrder();
+
+        //Otherwise split into two nodes with d and d keys
+        List<DataBox> firstNodeKeys = keys.subList(0, order);
+        List<DataBox> newNodeKeys = keys.subList(order+1, (order *2)+1);
+        List<Long> firstChilds = children.subList(0, order+1);
+        List<Long> newChilds = children.subList(order+1, (order *2)+2);
+
+        //save key to be bubbled up and update original node
+        DataBox split_key = keys.get(order);
+        keys = firstNodeKeys;
+        children = firstChilds;
+
+        //sync
+        sync();
+
+        //create new second node
+        InnerNode newNode = new InnerNode(metadata, bufferManager, newNodeKeys, newChilds, treeContext);
+
+        //create pair to return of split key and right node pageNum
+        Long right_node_page_num = newNode.getPage().getPageNum();
+        Pair<DataBox, Long> pair = new Pair<>(split_key, right_node_page_num);
+
+        //Optional<Pair<DataBox, Long>> retVal = Optional.of(pair);
+
+        return Optional.of(pair);
     }
 
     // See BPlusNode.remove.
     @Override
     public void remove(DataBox key) {
         // TODO(hw2): implement
+        int nextPtrNum = numLessThanEqual(key, this.keys);
+        getChild(nextPtrNum).remove(key);
 
         return;
     }
