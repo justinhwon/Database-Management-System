@@ -77,6 +77,7 @@ class BNLJOperator extends JoinOperator {
             } catch (NoSuchElementException e) {
                 this.nextRecord = null;
             }
+
         }
 
         /**
@@ -134,26 +135,30 @@ class BNLJOperator extends JoinOperator {
             // TODO(hw3_part1): implement
 
             //reset nextRecord to null
-            this.nextRecord = null;
+            //this.nextRecord = null;
+
+            //NOT PART OF SKELETON, ADDED BY ME
+            //instantiate first left record if needed
+            if(leftRecordIterator.hasNext() && leftRecord == null){
+                leftRecord = leftRecordIterator.next();
+            }
 
             //for each block of B−2 pages Br in R:
-            while(leftIterator.hasNext()){
-
+            //while((leftIterator.hasNext() || leftRecordIterator.hasNext()) && rightRecordIterator.hasNext()){
+            while(true){
                 // for each page Ps in S
-                while(rightIterator.hasNext()){
+                //while(rightIterator.hasNext()){
 
                     // for each record ri in Br:
-                    while(leftRecordIterator.hasNext()){
-
+                    //while(leftRecordIterator.hasNext()){
 
                         // for each record sj in Ps:
-                        while(rightRecordIterator.hasNext()){
+                        //while(rightRecordIterator.hasNext()){
 
                             // get the next right (s) record
                             Record rightRecord = rightRecordIterator.next();
 
-                            //if nothing left then end
-                            if (this.leftRecord == null && rightRecord == null) { throw new NoSuchElementException("No new record to fetch"); }
+
 
                             //if reached the end of an S page, iterate R
                             if(!rightRecordIterator.hasNext()){
@@ -187,6 +192,8 @@ class BNLJOperator extends JoinOperator {
                                 rightRecordIterator.reset();
                             }
 
+                            //if nothing left then end
+                            if (this.leftRecord == null && rightRecord == null) { throw new NoSuchElementException("No new record to fetch"); }
 
                             //if θ(ri ,sj ):
                             //yield <ri, sj>
@@ -197,9 +204,9 @@ class BNLJOperator extends JoinOperator {
                                 this.nextRecord = joinRecords(leftRecord, rightRecord);
                                 return;
                             }
-                        }
-                    }
-                }
+                       // }
+                   // }
+               // }
             }
         }
 
