@@ -162,12 +162,9 @@ class BNLJOperator extends JoinOperator {
                     leftRecordIterator.reset();
 
                     //for each record ri in Br:
-                    while (leftRecordIterator.hasNext() || leftRecord != null) {
-
-                        //move left record if no more right records
-                        if (rightRecordIterator.hasNext() && this.nextRecord == null){
-                            leftRecord = leftRecordIterator.next();
-                        }
+                    while (leftRecordIterator.hasNext()) {
+                        //move left record
+                        leftRecord = leftRecordIterator.next();
 
                         //for each record sj in ps:
                         while (rightRecordIterator.hasNext() || this.nextRecord != null) {
@@ -175,16 +172,16 @@ class BNLJOperator extends JoinOperator {
 
                             //if θ(ri ,sj ):
                             //yield <ri, sj>
-                            if (rightRecord != null) {
-                                DataBox leftValue = this.leftRecord.getValues().get(BNLJOperator.this.getLeftColumnIndex());
-                                DataBox rightValue = rightRecord.getValues().get(BNLJOperator.this.getRightColumnIndex());
-                                if (leftValue.equals(rightValue)) {
-                                    this.nextRecord = joinRecords(leftRecord, rightRecord);
-                                    return;
-                                }
+
+                            DataBox leftValue = this.leftRecord.getValues().get(BNLJOperator.this.getLeftColumnIndex());
+                            DataBox rightValue = rightRecord.getValues().get(BNLJOperator.this.getRightColumnIndex());
+                            if (leftValue.equals(rightValue)) {
+                                this.nextRecord = joinRecords(leftRecord, rightRecord);
+                                return;
                             }
+
                             // if ran out of records in page s, reset to beginning of page
-                            else {
+                            if (!rightRecordIterator.hasNext()) {
                                 // return if no records to fetch
                                 if (leftRecordIterator == null) {
                                     throw new NoSuchElementException("No new record to fetch");
