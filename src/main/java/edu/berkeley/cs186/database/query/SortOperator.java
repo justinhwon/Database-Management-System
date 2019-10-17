@@ -73,7 +73,26 @@ public class SortOperator {
     public Run sortRun(Run run) {
         // TODO(hw3_part1): implement
 
-        return null;
+        // create new run
+        Run sortedRun = createRun();
+
+        // convert run to list
+        List<Record> recordList = new ArrayList<Record>();
+
+        Iterator<Record> runIterator = run.iterator();
+
+        while (runIterator.hasNext()) {
+            recordList.add(runIterator.next());
+        }
+
+        // sort list
+        recordList.sort(comparator);
+
+        // add records to new run
+        sortedRun.addRecords(recordList);
+
+
+        return sortedRun;
     }
 
     /**
@@ -87,7 +106,55 @@ public class SortOperator {
     public Run mergeSortedRuns(List<Run> runs) {
         // TODO(hw3_part1): implement
 
-        return null;
+        //Pair<Record, Integer>
+
+        // create new run
+        Run mergedRun = createRun();
+
+        // create priority queue
+        PriorityQueue<Pair<Record, Integer>> recordQueue = new PriorityQueue<Pair<Record, Integer>>(new RecordPairComparator());
+
+        // create list of iterators of each run
+        List<Iterator<Record>> iteratorList = new ArrayList<Iterator<Record>>();
+
+        // put one record from each run into Priority Queue
+        int numRuns = runs.size();
+        for (int i = 0; i < runs.size(); i++) {
+            Run run = runs.get(i);
+            Iterator<Record> runIterator = run.iterator();
+            // add pair of <record, run number> to queue
+            Pair<Record, Integer> newPair = new Pair(runIterator.next(), i);
+            recordQueue.add(newPair);
+            // add iterator to list of iterators
+            iteratorList.add(runIterator);
+        }
+
+        // created mergedRun from priority queue
+        while(!recordQueue.isEmpty()){
+            // get next smallest element from queue
+            Pair<Record, Integer> nextPair = recordQueue.poll();
+            int runNum = nextPair.getSecond();
+            Record record = nextPair.getFirst();
+
+            // convert record to list
+            List<Record> recordList = new ArrayList<Record>();
+            recordList.add(record);
+
+            // add into new merged run
+            mergedRun.addRecords(recordList);
+
+            // get new record from run into priority queue
+            Run run = runs.get(runNum);
+            Iterator<Record> runIterator = iteratorList.get(runNum);
+            // add pair of <record, run number> to queue
+            if (runIterator.hasNext()){
+                Pair<Record, Integer> newPair = new Pair(runIterator.next(), runNum);
+                recordQueue.add(newPair);
+            }
+        }
+
+
+        return mergedRun;
     }
 
     /**
@@ -98,7 +165,31 @@ public class SortOperator {
     public List<Run> mergePass(List<Run> runs) {
         // TODO(hw3_part1): implement
 
-        return Collections.emptyList();
+        // make list of runs
+        List<Run> runList = new ArrayList<Run>();
+
+        // get number of input buffers and number of runs
+        int N = runs.size();
+        int numInputBufs = numBuffers - 1;
+
+        // merge N runs at a time
+        for(int i=0; i < Math.ceil((double) N / numInputBufs); i++){
+            //if less than N runs left
+            if ( i == N / numInputBufs){
+                List<Run> nextRuns = runs.subList(i*numInputBufs, N);
+                Run mergeRun = mergeSortedRuns(nextRuns);
+                runList.add(mergeRun);
+            }
+            //otherwise merge N runs
+            else{
+                List<Run> nextRuns = runs.subList(i*numInputBufs, (i+1)*numInputBufs);
+                Run mergeRun = mergeSortedRuns(nextRuns);
+                runList.add(mergeRun);
+            }
+        }
+
+        // return list of runs
+        return runList;
     }
 
     /**
