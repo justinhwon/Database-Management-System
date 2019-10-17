@@ -133,42 +133,60 @@ class BNLJOperator extends JoinOperator {
         private void fetchNextRecord() {
             // TODO(hw3_part1): implement
 
-            // mark the beginning of the right records
-            rightIterator.markNext();
-
             //reset nextRecord to null
             this.nextRecord = null;
 
             //for each block of B−2 pages Br in R:
-            while (leftIterator.hasNext() || leftRecordIterator != null) {
+            while(leftIterator.hasNext()){
 
-                //check if block is empty
-                if(leftRecordIterator == null && leftRecord == null){
-                    fetchNextLeftBlock();
-                }
-                leftRecordIterator.markNext();
+                // for each page Ps in S
+                while(rightIterator.hasNext()){
 
-                //finished a block loop so restart from beginning of right
-                rightIterator.reset();
+                    // for each record ri in Br:
+                    while(leftRecordIterator.hasNext()){
 
-                //for each page ps in S:
-                while (rightIterator.hasNext() || rightRecordIterator != null) {
-                    //check if block is empty
-                    if(rightRecordIterator == null){
-                        fetchNextRightPage();
-                    }
-                    rightRecordIterator.markNext();
-                    //finished a page loop so restart from beginning of left
-                    leftRecordIterator.reset();
 
-                    //for each record ri in Br:
-                    while (leftRecordIterator.hasNext()) {
-                        //move left record
-                        leftRecord = leftRecordIterator.next();
+                        // for each record sj in Ps:
+                        while(rightRecordIterator.hasNext()){
 
-                        //for each record sj in ps:
-                        while (rightRecordIterator.hasNext() || this.nextRecord != null) {
+                            // get the next right (s) record
                             Record rightRecord = rightRecordIterator.next();
+
+                            //if nothing left then end
+                            if (this.leftRecord == null && rightRecord == null) { throw new NoSuchElementException("No new record to fetch"); }
+
+                            //if reached the end of an S page, iterate R
+                            if(!rightRecordIterator.hasNext()){
+                                leftRecord = leftRecordIterator.next();
+                            }
+
+                            // if finished all R records on a page S, move to next page of S
+                            if(!rightRecordIterator.hasNext() && !leftRecordIterator.hasNext()){
+                                fetchNextRightPage();
+                                rightRecordIterator.markNext();
+                            }
+
+                            //if finished an R block, move to next R block
+                            if(!rightRecordIterator.hasNext() && !leftRecordIterator.hasNext()){
+                                fetchNextLeftBlock();
+                                leftRecordIterator.markNext();
+                            }
+
+                            // reset S to first page when all of a R block read
+                            if(!rightIterator.hasNext() && !leftRecordIterator.hasNext()){
+                                rightIterator.reset();
+                            }
+
+                            // reset r to first page in R block when all S pages read
+                            if(!rightRecordIterator.hasNext() && !leftRecordIterator.hasNext()){
+                                leftRecordIterator.reset();
+                            }
+
+                            //reset s to same page while still iterating through R records
+                            if(!rightRecordIterator.hasNext() && leftRecordIterator.hasNext()){
+                                rightRecordIterator.reset();
+                            }
+
 
                             //if θ(ri ,sj ):
                             //yield <ri, sj>
@@ -179,17 +197,7 @@ class BNLJOperator extends JoinOperator {
                                 this.nextRecord = joinRecords(leftRecord, rightRecord);
                                 return;
                             }
-
-                            // if ran out of records in page s, reset to beginning of page
-                            if (!rightRecordIterator.hasNext()) {
-                                // return if no records to fetch
-                                if (leftRecordIterator == null) {
-                                    throw new NoSuchElementException("No new record to fetch");
-                                }
-                                rightRecordIterator.reset();
-                            }
                         }
-
                     }
                 }
             }
