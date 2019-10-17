@@ -89,6 +89,17 @@ class BNLJOperator extends JoinOperator {
          */
         private void fetchNextLeftBlock() {
             // TODO(hw3_part1): implement
+
+            // if no more blocks, set iterators to null
+            if (!leftIterator.hasNext()){
+                leftRecordIterator = null;
+                leftRecord = null;
+            } else{
+                // set leftRecordIterator to the next block
+                this.leftRecordIterator = getBlockIterator(this.getLeftTableName(),
+                        this.leftIterator, BNLJOperator.this.numBuffers - 2);
+            }
+
         }
 
         /**
@@ -101,6 +112,16 @@ class BNLJOperator extends JoinOperator {
          */
         private void fetchNextRightPage() {
             // TODO(hw3_part1): implement
+
+            // if no more pages in rightIterator, set rightRecordIterator to null
+            if (!rightIterator.hasNext()){
+                rightRecordIterator = null;
+            } else{
+                // set rightRecordIterator to the next page
+                this.rightRecordIterator = getBlockIterator(this.getRightTableName(),
+                        this.rightIterator, 1);
+            }
+
         }
 
         /**
@@ -111,6 +132,70 @@ class BNLJOperator extends JoinOperator {
          */
         private void fetchNextRecord() {
             // TODO(hw3_part1): implement
+
+            // mark the beginning of the right records
+            rightIterator.markNext();
+
+            //reset nextRecord to null
+            this.nextRecord = null;
+
+            //for each block of B−2 pages Br in R:
+            while (leftIterator.hasNext() || leftRecordIterator != null) {
+
+                //check if block is empty
+                if(leftRecordIterator == null && leftRecord == null){
+                    fetchNextLeftBlock();
+                }
+                leftRecordIterator.markNext();
+
+                //finished a block loop so restart from beginning of right
+                rightIterator.reset();
+
+                //for each page ps in S:
+                while (rightIterator.hasNext() || rightRecordIterator != null) {
+                    //check if block is empty
+                    if(rightRecordIterator == null){
+                        fetchNextRightPage();
+                    }
+                    rightRecordIterator.markNext();
+                    //finished a page loop so restart from beginning of left
+                    leftRecordIterator.reset();
+
+                    //for each record ri in Br:
+                    while (leftRecordIterator.hasNext() || leftRecord != null) {
+
+                        //move left record if no more right records
+                        if (rightRecordIterator.hasNext() && this.nextRecord == null){
+                            leftRecord = leftRecordIterator.next();
+                        }
+
+                        //for each record sj in ps:
+                        while (rightRecordIterator.hasNext() || this.nextRecord != null) {
+                            Record rightRecord = rightRecordIterator.next();
+
+                            //if θ(ri ,sj ):
+                            //yield <ri, sj>
+                            if (rightRecord != null) {
+                                DataBox leftValue = this.leftRecord.getValues().get(BNLJOperator.this.getLeftColumnIndex());
+                                DataBox rightValue = rightRecord.getValues().get(BNLJOperator.this.getRightColumnIndex());
+                                if (leftValue.equals(rightValue)) {
+                                    this.nextRecord = joinRecords(leftRecord, rightRecord);
+                                    return;
+                                }
+                            }
+                            // if ran out of records in page s, reset to beginning of page
+                            else {
+                                // return if no records to fetch
+                                if (leftRecordIterator == null) {
+                                    throw new NoSuchElementException("No new record to fetch");
+                                }
+                                rightRecordIterator.reset();
+                            }
+                        }
+
+                    }
+                }
+            }
         }
 
         /**
