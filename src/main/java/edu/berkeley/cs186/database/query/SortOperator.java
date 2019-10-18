@@ -200,7 +200,57 @@ public class SortOperator {
     public String sort() {
         // TODO(hw3_part1): implement
 
-        return this.tableName; // TODO(hw3_part1): replace this!
+        /**
+         1. I use transaction.getPageIterator to get a page iterator.
+
+         2. loop through the page iterator to create record iterator with B pages from transaction.getBlockIterator.
+
+         3. create runs with createRunFromIterator
+
+         4. use sortrun to sort the list of runs I created from last step
+
+         5. put the list through a mergepass loop to reduce the size of the list to 1
+
+         6. lastly, put the single item in the list to mergesortedruns to create the final run to output.
+
+         7. get the tablename from the final run.
+
+         */
+
+        // get a page iterator
+        BacktrackingIterator<Page> pageIterator = transaction.getPageIterator(this.tableName);
+
+        // make list of runs
+        List<Run> runList = new ArrayList<Run>();
+
+
+        // make sorted runs of all pages
+        while(pageIterator.hasNext()) {
+            // get a block iterator using the page iterator
+            BacktrackingIterator<Record> blockIterator = transaction.getBlockIterator(this.tableName, pageIterator, this.numBuffers);
+
+            // create run from the block iterator
+            Run newRun = createRunFromIterator(blockIterator);
+
+            // sort the run
+            Run sortedRun = sortRun(newRun);
+
+            //insert run into list
+            runList.add(sortedRun);
+        }
+
+        // merge the sorted runs
+        List<Run> sortedFile = mergePass(runList);
+
+        // do as many passes as necessary until only one run
+        while (sortedFile.size() > 1){
+            sortedFile = mergePass(sortedFile);
+        }
+
+        // get the run from the list of size 1
+        Run sortedTable = sortedFile.get(0);
+
+        return sortedTable.tableName(); // TODO(hw3_part1): replace this!
     }
 
     public Iterator<Record> iterator() {
