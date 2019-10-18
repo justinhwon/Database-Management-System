@@ -57,6 +57,127 @@ class SortMergeOperator extends JoinOperator {
         private SortMergeIterator() {
             super();
             // TODO(hw3_part1): implement
+
+            // get iterator over sorted left table
+            SortOperator leftTable = new SortOperator(SortMergeOperator.this.getTransaction(), getLeftTableName(), new LeftRecordComparator());
+            String sortedLeftTable = leftTable.sort();
+            this.leftIterator = SortMergeOperator.this.getRecordIterator(sortedLeftTable);
+
+            //get iterator over sorted right table
+            SortOperator rightTable = new SortOperator(SortMergeOperator.this.getTransaction(), getRightTableName(), new RightRecordComparator());
+            String sortedRightTable = rightTable.sort();
+            this.rightIterator = SortMergeOperator.this.getRecordIterator(sortedRightTable);
+
+            /*
+            this.rightIterator = SortMergeOperator.this.getRecordIterator(this.getRightTableName());
+            this.leftIterator = SortMergeOperator.this.getRecordIterator(this.getLeftTableName());
+            */
+
+            this.nextRecord = null;
+
+            this.leftRecord = leftIterator.hasNext() ? leftIterator.next() : null;
+            this.rightRecord = rightIterator.hasNext() ? rightIterator.next() : null;
+
+            // No mark in the beginning
+            this.marked = false;
+
+
+            try {
+                fetchNextRecord();
+            } catch (NoSuchElementException e) {
+                this.nextRecord = null;
+            }
+
+
+
+        }
+
+
+        // ADDED THIS FUNCTION, NOT PART OF SKELETON
+        private void fetchNextRecord() {
+
+            // reset nextRecord
+            this.nextRecord = null;
+
+            do {
+
+                // get the key values
+                DataBox r = leftRecord.getValues().get(SortMergeOperator.this.getLeftColumnIndex());
+                DataBox s = rightRecord.getValues().get(SortMergeOperator.this.getRightColumnIndex());
+                // if there is no mark on s
+                if (!marked) {
+                    // if r < s
+                    while (r.compareTo(s) < 0) {
+                        // exit if nothing left
+                        if (!this.leftIterator.hasNext()) {
+                            leftRecord = null;
+                        }
+                        else{
+                            // update leftRecord and r value
+                            leftRecord = leftIterator.next();
+                            r = leftRecord.getValues().get(SortMergeOperator.this.getLeftColumnIndex());
+                        }
+
+                    }
+                    // if r > s
+                    while (r.compareTo(s) > 0) {
+
+                        // if run out of s, all r are bigger so exit
+                        if(!this.rightIterator.hasNext()){
+                            throw new NoSuchElementException("No new record to fetch");
+                        }
+
+                        // update rightRecord and s value
+                        rightRecord = rightIterator.next();
+                        s = rightRecord.getValues().get(SortMergeOperator.this.getRightColumnIndex());
+                    }
+
+                }
+                // if r == s
+                if (r.compareTo(s) == 0){
+                    // once r = s, mark that s value
+                    if (!marked){
+                        rightIterator.markPrev();
+                        this.marked = true;
+                    }
+
+                    // combine the 2 records
+                    List<DataBox> leftValues = new ArrayList<>(this.leftRecord.getValues());
+                    List<DataBox> rightValues = new ArrayList<>(rightRecord.getValues());
+                    leftValues.addAll(rightValues);
+
+                    // update the return value
+                    this.nextRecord = new Record(leftValues);
+
+                    //check if s left
+                    if (!leftIterator.hasNext() && !rightIterator.hasNext()){
+                        throw new NoSuchElementException("No new record to fetch");
+                    }
+                    else if(!rightIterator.hasNext()){
+                        rightIterator.reset();
+                        rightRecord = rightIterator.next();
+                        leftRecord = leftIterator.next();
+                    }
+                    else{
+                        // advance s
+                        rightRecord = rightIterator.next();
+                        s = rightRecord.getValues().get(SortMergeOperator.this.getRightColumnIndex());
+                    }
+
+
+                }
+                // if r!=s
+                else{
+                    // reset s to mark
+                    rightIterator.reset();
+                    rightRecord = rightIterator.next();
+                    s = rightRecord.getValues().get(SortMergeOperator.this.getRightColumnIndex());
+                    // advance r
+                    leftRecord = leftIterator.next();
+                    r = leftRecord.getValues().get(SortMergeOperator.this.getLeftColumnIndex());
+                    this.marked = false;
+                }
+            } while (this.nextRecord == null);
         }
 
         /**
@@ -68,7 +189,7 @@ class SortMergeOperator extends JoinOperator {
         public boolean hasNext() {
             // TODO(hw3_part1): implement
 
-            return false;
+            return this.nextRecord != null;
         }
 
         /**
@@ -80,8 +201,17 @@ class SortMergeOperator extends JoinOperator {
         @Override
         public Record next() {
             // TODO(hw3_part1): implement
+            if (!this.hasNext()) {
+                throw new NoSuchElementException();
+            }
 
-            throw new NoSuchElementException();
+            Record nextRecord = this.nextRecord;
+            try {
+                this.fetchNextRecord();
+            } catch (NoSuchElementException e) {
+                this.nextRecord = null;
+            }
+            return nextRecord;
         }
 
         @Override
