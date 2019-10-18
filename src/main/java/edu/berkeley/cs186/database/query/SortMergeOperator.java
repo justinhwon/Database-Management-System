@@ -95,7 +95,9 @@ class SortMergeOperator extends JoinOperator {
 
         // ADDED THIS FUNCTION, NOT PART OF SKELETON
         private void fetchNextRecord() {
-
+            
+            // check if leftRecord null
+            if (this.leftRecord == null) { throw new NoSuchElementException("No new record to fetch"); }
             // reset nextRecord
             this.nextRecord = null;
 
@@ -109,15 +111,12 @@ class SortMergeOperator extends JoinOperator {
                     // if r < s
                     while (r.compareTo(s) < 0) {
                         // exit if nothing left
-                        if (!this.leftIterator.hasNext()) {
-                            leftRecord = null;
-                        }
-                        else{
-                            // update leftRecord and r value
-                            leftRecord = leftIterator.next();
-                            r = leftRecord.getValues().get(SortMergeOperator.this.getLeftColumnIndex());
-                        }
+                        if (!this.leftIterator.hasNext()) { throw new NoSuchElementException("No new record to fetch"); }
 
+
+                        // update leftRecord and r value
+                        leftRecord = leftIterator.next();
+                        r = leftRecord.getValues().get(SortMergeOperator.this.getLeftColumnIndex());
                     }
                     // if r > s
                     while (r.compareTo(s) > 0) {
@@ -151,7 +150,8 @@ class SortMergeOperator extends JoinOperator {
 
                     //check if s left
                     if (!leftIterator.hasNext() && !rightIterator.hasNext()){
-                        throw new NoSuchElementException("No new record to fetch");
+                        //throw new NoSuchElementException("No new record to fetch");
+                        leftRecord = null;
                     }
                     else if(!rightIterator.hasNext()){
                         rightIterator.reset();
