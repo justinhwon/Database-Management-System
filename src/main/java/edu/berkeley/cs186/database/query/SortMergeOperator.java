@@ -95,7 +95,7 @@ class SortMergeOperator extends JoinOperator {
 
         // ADDED THIS FUNCTION, NOT PART OF SKELETON
         private void fetchNextRecord() {
-            
+
             // check if leftRecord null
             if (this.leftRecord == null) { throw new NoSuchElementException("No new record to fetch"); }
             // reset nextRecord
