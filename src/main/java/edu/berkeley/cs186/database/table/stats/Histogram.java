@@ -146,8 +146,8 @@ public class Histogram {
 
         //3. create each bucket object
 
+        buckets = new Bucket[numBuckets];
         for (int i = 0; i < numBuckets; ++i) {
-            buckets = new Bucket[numBuckets];
             buckets[i] = new Bucket<>(minValue + (i * width), minValue + ((i + 1) * width));
         }
 
@@ -307,6 +307,21 @@ public class Histogram {
 
         // TODO(hw3_part2): implement
 
+        // get bucket index with equal value
+        int equalIndex = bucketIndex(qvalue);
+
+        for (int i = 0; i < this.buckets.length; i++) {
+            // set the bucket that contains the value by 1/distinctCount
+            if(i == equalIndex){
+                result[i] = 1.0f / buckets[i].getDistinctCount();
+            }
+            // set all other values to 0.
+            else{
+                result[i] = 0f;
+            }
+        }
+
+
         return result;
     }
 
@@ -318,6 +333,20 @@ public class Histogram {
         float [] result = new float[this.buckets.length];
 
         // TODO(hw3_part2): implement
+
+        // get bucket index with equal value
+        int equalIndex = bucketIndex(qvalue);
+
+        for (int i = 0; i < this.buckets.length; i++) {
+            // set the bucket that contains the value by 1-1/distinctCount
+            if(i == equalIndex){
+                result[i] = 1.0f - (1.0f / buckets[i].getDistinctCount());
+            }
+            // set all other values to 1.
+            else{
+                result[i] = 1.0f;
+            }
+        }
 
         return result;
     }
@@ -331,6 +360,24 @@ public class Histogram {
 
         // TODO(hw3_part2): implement
 
+        // get bucket index with equal value
+        int equalIndex = bucketIndex(qvalue);
+
+        for (int i = 0; i < this.buckets.length; i++) {
+            // set the bucket that contains the value by (end - q)/width
+            if(i == equalIndex){
+                result[i] = (buckets[i].getEnd() - qvalue)/ width;
+            }
+            // set all other buckets to 1 if higher
+            else if (i > equalIndex){
+                result[i] = 1.0f;
+            }
+            // and 0 if lower.
+            else{
+                result[i] = 0f;
+            }
+        }
+
         return result;
     }
 
@@ -342,6 +389,24 @@ public class Histogram {
         float [] result = new float[this.buckets.length];
 
         // TODO(hw3_part2): implement
+
+        // get bucket index with equal value
+        int equalIndex = bucketIndex(qvalue);
+
+        for (int i = 0; i < this.buckets.length; i++) {
+            // set the bucket that contains the value by (q-start)/width
+            if(i == equalIndex){
+                result[i] = (qvalue - buckets[i].getStart())/ width;
+            }
+            // set all other buckets to 1 if lower
+            else if (i < equalIndex){
+                result[i] = 1.0f;
+            }
+            // and 0 if higher.
+            else{
+                result[i] = 0f;
+            }
+        }
 
         return result;
     }
