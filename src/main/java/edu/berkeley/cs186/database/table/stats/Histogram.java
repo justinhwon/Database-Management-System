@@ -116,11 +116,54 @@ public class Histogram {
 
         //1. first calculate the min and the max values
 
+        // get the iterator over the records in the table (not backtracking because no need/not imported)
+        Iterator<Record> records = table.iterator();
+
+        // initialize min/max values, if empty table do nothing
+        if (records.hasNext()){
+            Record nextRecord = records.next();
+            float nextValue = quantization(nextRecord, attribute);
+            minValue = nextValue;
+            maxValue = nextValue;
+        }
+        // set min/max values
+        while (records.hasNext()){
+            Record nextRecord = records.next();
+            float nextValue = quantization(nextRecord, attribute);
+            // if value > max
+            if (nextValue > maxValue){
+                maxValue = nextValue;
+            }
+            // if value < min
+            if (nextValue < minValue){
+                minValue = nextValue;
+            }
+        }
+
         //2. calculate the width of each bin
+        int numBuckets = buckets.length;
+        width = (maxValue - minValue) / numBuckets;
 
         //3. create each bucket object
 
+        for (int i = 0; i < numBuckets; ++i) {
+            buckets = new Bucket[numBuckets];
+            buckets[i] = new Bucket<>(minValue + (i * width), minValue + ((i + 1) * width));
+        }
+
         //4. populate the data using the increment(value) method
+
+        // reset iterator
+        records = table.iterator();
+
+        // put values into correct buckets
+        while(records.hasNext()){
+            Record nextRecord = records.next();
+            float nextValue = quantization(nextRecord, attribute);
+            int index = bucketIndex(nextValue);
+            buckets[index].increment(nextValue);
+        }
+
 
         return;
     }
