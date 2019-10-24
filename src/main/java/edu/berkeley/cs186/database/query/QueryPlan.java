@@ -326,6 +326,7 @@ public class QueryPlan {
      */
     QueryOperator minCostSingleAccess(String table) {
         QueryOperator minOp = null;
+        Integer exceptCol = Integer.MAX_VALUE;
 
         // Find the cost of a sequential scan of the table
         // minOp = new SequentialScanOperator(this.transaction, table);
@@ -334,12 +335,45 @@ public class QueryPlan {
 
         // 1. Find the cost of a sequential scan of the table
 
+        // Find the cost of a sequential scan of the table
+        minOp = new SequentialScanOperator(this.transaction, table);
+        int minCost = minOp.estimateIOCost();
+
+
         // 2. For each eligible index column, find the cost of an index scan of the
         // table and retain the lowest cost operator
+
+        //get eligible columns
+        List<Integer> indexCols = getEligibleIndexColumns(table);
+
+        //for each eligible column
+        for (Integer col : indexCols) {
+            //setup to get index scan on that column
+            String colName = selectColumnNames.get(col);
+            PredicateOperator predicate = selectOperators.get(col);
+            DataBox value = selectDataBoxes.get(col);
+
+            //get index scan on that column
+            IndexScanOperator indexScan = new IndexScanOperator(transaction, table, colName, predicate, value);
+
+            //update lowest cost scan
+            int indexCost = indexScan.estimateIOCost();
+            if (indexCost < minCost) {
+                minOp = indexScan;
+                minCost = indexCost;
+                exceptCol = col;
+            }
+        }
+
 
         // 3. Push down SELECT predicates that apply to this table and that were not
         // used for an index scan
 
+        // apply selections that are NOT used for index scan
+        minOp = addEligibleSelections(minOp, exceptCol);
+
+
+        // return the least cost scan
         return minOp;
     }
 
