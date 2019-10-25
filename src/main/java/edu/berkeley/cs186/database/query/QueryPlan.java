@@ -240,8 +240,31 @@ public class QueryPlan {
 
         // PASS 1
 
+        /*
+        // if no joins needed, just return access operator
+        if (joinTableNames.isEmpty()){
+            QueryOperator tableOperator = minCostSingleAccess(startTableName);
+            this.finalOperator = tableOperator;
+            //this.addJoins();
+            //this.addSelects();
+            this.addGroupBy();
+            this.addProjects();
+
+            return this.finalOperator.execute();
+
+        }
+        */
+
         // create a new map for pass 1
         Map<Set, QueryOperator> map1 = new HashMap<>();
+
+        // add startTableName to map1
+        Set<String> startTable = new HashSet<>();
+        startTable.add(startTableName);
+        // get corresponding operator
+        QueryOperator startOp = minCostSingleAccess(startTableName);
+        // put set(table), operator in map1
+        map1.put(startTable, startOp);
 
         // put a set with each join table name in the map with its cheapest access operator
         for (String table:joinTableNames){
@@ -260,7 +283,7 @@ public class QueryPlan {
         Map<Set, QueryOperator> map = new HashMap<>(map1);
 
         // run until all of joinTableNames in the sets
-        for (int i =0; i <joinTableNames.size() - 1; i++){
+        for (int i =0; i <joinTableNames.size(); i++){
             map = minCostJoins(map, map1);
         }
 
