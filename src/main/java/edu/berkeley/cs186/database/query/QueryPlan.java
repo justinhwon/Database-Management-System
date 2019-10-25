@@ -283,7 +283,8 @@ public class QueryPlan {
         Map<Set, QueryOperator> map = new HashMap<>(map1);
 
         // run until all of joinTableNames in the sets
-        for (int i =0; i <joinTableNames.size(); i++){
+        //for (int i =0; i <joinTableNames.size(); i++){
+        while(map.size() != 1){
             map = minCostJoins(map, map1);
         }
 
@@ -292,6 +293,8 @@ public class QueryPlan {
         this.finalOperator = finalOp;
         this.addGroupBy();
         this.addProjects();
+
+        System.out.println(finalOperator.toString());
 
         return this.finalOperator.execute();
 
