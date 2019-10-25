@@ -551,7 +551,7 @@ public class QueryPlan {
                     if (set.contains(leftTable) && !set.contains(rightTable)){
                         // get the right operator from pass1Map
                         Set<String> pass1Key = new HashSet<>();
-                        pass1Key.add(joinTableName);
+                        pass1Key.add(rightTable);
                         QueryOperator rightOperator = pass1Map.get(pass1Key);
 
                         // get the new join query
@@ -591,7 +591,7 @@ public class QueryPlan {
                     else if (set.contains(rightTable) && !set.contains(leftTable)){
                         // get the left operator from pass1Map
                         Set<String> pass1Key = new HashSet<>();
-                        pass1Key.add(joinTableName);
+                        pass1Key.add(leftTable);
                         QueryOperator leftOperator = pass1Map.get(pass1Key);
 
                         // get the new join query
