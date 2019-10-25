@@ -32,7 +32,7 @@ public class Database implements AutoCloseable {
     private static final String TABLE_INFO_TABLE_NAME = METADATA_TABLE_PREFIX + "tables";
     private static final String INDEX_INFO_TABLE_NAME = METADATA_TABLE_PREFIX + "indices";
     private static final int DEFAULT_BUFFER_SIZE = 262144; // default of 1G
-    private static final int MAX_SCHEMA_SIZE = 4001;
+    private static final int MAX_SCHEMA_SIZE = 4005; // a wonderful number pulled out of nowhere
 
     // information_schema.tables, manages all tables in the database
     private Table tableInfo;
@@ -61,10 +61,10 @@ public class Database implements AutoCloseable {
     // recovery manager
     private final RecoveryManager recoveryManager;
 
-    // transaction for setup/cleanup
-    private final Transaction initTransaction;
-    // transaction context for recovery manager; only used to hold locks
-    private final TransactionContext recoveryTransaction;
+    // transaction for creating metadata partitions and loading tables
+    private final Transaction primaryInitTransaction;
+    // transaction for loading indices
+    private final Transaction secondaryInitTransaction;
     // thread pool for background tasks
     private final ExecutorService executor;
 
@@ -131,14 +131,10 @@ public class Database implements AutoCloseable {
         indexInfoLookup = new ConcurrentHashMap<>();
         this.executor = new ThreadPool();
 
-        recoveryTransaction = new TransactionContextImpl(-1);
-        initTransaction = beginTransaction();
-        TransactionContext.setTransaction(initTransaction.getTransactionContext());
-
         // TODO(hw5): change to use ARIES recovery manager
         recoveryManager = new DummyRecoveryManager();
-        // recoveryManager = new ARIESRecoveryManager(lockManager.databaseContext(), getLogContext(),
-        //                                            this::beginTransaction, recoveryTransaction);
+        // recoveryManager = new ARIESRecoveryManager(lockManager.databaseContext(),
+        //         this::beginRecoveryTranscation, this::setTransactionCounter);
 
         diskSpaceManager = new DiskSpaceManagerImpl(fileDir, recoveryManager);
         bufferManager = new BufferManagerImpl(diskSpaceManager, recoveryManager, numMemoryPages,
@@ -147,34 +143,36 @@ public class Database implements AutoCloseable {
         recoveryManager.setManagers(diskSpaceManager, bufferManager);
 
         if (!initialized) {
-            // create log partition, information_schema.tables partition, and information_schema.indices partition
             diskSpaceManager.allocPart(0);
-            diskSpaceManager.allocPart(1);
-            diskSpaceManager.allocPart(2);
-
             recoveryManager.initialize();
-        } else {
-            Runnable r = recoveryManager.restart();
-            executor.submit(r);
         }
 
+        Runnable r = recoveryManager.restart();
+        executor.submit(r);
+
+        primaryInitTransaction = beginTransaction();
+        secondaryInitTransaction = beginTransaction();
+        TransactionContext.setTransaction(primaryInitTransaction.getTransactionContext());
+
+        if (!initialized) {
+            // create log partition, information_schema.tables partition, and information_schema.indices partition
+            diskSpaceManager.allocPart(1);
+            diskSpaceManager.allocPart(2);
+        }
+
+        TransactionContext.unsetTransaction();
         LockContext dbContext = lockManager.databaseContext();
         LockContext tableInfoContext = getTableInfoContext();
 
         if (!initialized) {
-            dbContext.acquire(initTransaction.getTransactionContext(), LockType.X);
+            dbContext.acquire(primaryInitTransaction.getTransactionContext(), LockType.X);
             this.initTableInfo();
             this.initIndexInfo();
-            initTransaction.commit();
             this.loadingProgress.arriveAndDeregister();
         } else {
-            dbContext.acquire(initTransaction.getTransactionContext(), LockType.IX);
-            tableInfoContext.acquire(initTransaction.getTransactionContext(), LockType.S);
-            this.loadTableInfo();
-            this.loadTables();
+            this.loadMetadataTables();
+            this.loadTablesAndIndices();
         }
-
-        TransactionContext.unsetTransaction();
     }
 
     private boolean setupDirectory(String fileDir) {
@@ -197,6 +195,8 @@ public class Database implements AutoCloseable {
 
     // create information_schema.tables
     private void initTableInfo() {
+        TransactionContext.setTransaction(primaryInitTransaction.getTransactionContext());
+
         long tableInfoPage0 = DiskSpaceManager.getVirtualPageNum(1, 0);
         diskSpaceManager.allocPage(tableInfoPage0);
 
@@ -205,20 +205,25 @@ public class Database implements AutoCloseable {
                 tableInfoContext);
         tableInfo = new Table(TABLE_INFO_TABLE_NAME, getTableInfoSchema(), tableInfoHeapFile,
                               tableInfoContext);
+        tableInfo.disableAutoEscalate();
         tableInfoLookup.put(TABLE_INFO_TABLE_NAME, tableInfo.addRecord(Arrays.asList(
                                 new StringDataBox(TABLE_INFO_TABLE_NAME, 32),
                                 new IntDataBox(1),
                                 new LongDataBox(tableInfoPage0),
                                 new BoolDataBox(false),
-                                new IntDataBox(0),
                                 new StringDataBox(new String(getTableInfoSchema().toBytes()), MAX_SCHEMA_SIZE)
                             )));
         tableLookup.put(TABLE_INFO_TABLE_NAME, tableInfo);
         tableIndices.put(TABLE_INFO_TABLE_NAME, Collections.emptyList());
+
+        primaryInitTransaction.commit();
+        TransactionContext.unsetTransaction();
     }
 
     // create information_schema.indices
     private void initIndexInfo() {
+        TransactionContext.setTransaction(secondaryInitTransaction.getTransactionContext());
+
         long indexInfoPage0 = DiskSpaceManager.getVirtualPageNum(2, 0);
         diskSpaceManager.allocPage(indexInfoPage0);
 
@@ -226,111 +231,164 @@ public class Database implements AutoCloseable {
         HeapFile heapFile = new PageDirectory(bufferManager, 2, indexInfoPage0, (short) 0,
                                               indexInfoContext);
         indexInfo = new Table(INDEX_INFO_TABLE_NAME, getIndexInfoSchema(), heapFile, indexInfoContext);
+        indexInfo.disableAutoEscalate();
         indexInfo.setFullPageRecords();
         tableInfoLookup.put(INDEX_INFO_TABLE_NAME, tableInfo.addRecord(Arrays.asList(
                                 new StringDataBox(INDEX_INFO_TABLE_NAME, 32),
                                 new IntDataBox(2),
                                 new LongDataBox(indexInfoPage0),
                                 new BoolDataBox(false),
-                                new IntDataBox(0),
                                 new StringDataBox(new String(getIndexInfoSchema().toBytes()), MAX_SCHEMA_SIZE)
                             )));
         tableLookup.put(INDEX_INFO_TABLE_NAME, indexInfo);
         tableIndices.put(INDEX_INFO_TABLE_NAME, Collections.emptyList());
+
+        secondaryInitTransaction.commit();
+        TransactionContext.unsetTransaction();
     }
 
-    private void loadTableInfo() {
-        LockContext tableInfoContext = getTableInfoContext();
+    private void loadMetadataTables() {
         // load information_schema.tables
+        LockContext tableInfoContext = getTableInfoContext();
         HeapFile tableInfoHeapFile = new PageDirectory(bufferManager, 1,
                 DiskSpaceManager.getVirtualPageNum(1, 0), (short) 0, tableInfoContext);
         tableInfo = new Table(TABLE_INFO_TABLE_NAME, getTableInfoSchema(), tableInfoHeapFile,
                               tableInfoContext);
+        tableInfo.disableAutoEscalate();
         tableLookup.put(TABLE_INFO_TABLE_NAME, tableInfo);
         tableIndices.put(TABLE_INFO_TABLE_NAME, Collections.emptyList());
+        // load information_schema.indices
+        LockContext indexInfoContext = getIndexInfoContext();
+        HeapFile indexInfoHeapFile = new PageDirectory(bufferManager, 2,
+                DiskSpaceManager.getVirtualPageNum(2, 0), (short) 0, indexInfoContext);
+        indexInfo = new Table(INDEX_INFO_TABLE_NAME, getIndexInfoSchema(), indexInfoHeapFile,
+                              indexInfoContext);
+        indexInfo.disableAutoEscalate();
+        indexInfo.setFullPageRecords();
+        tableLookup.put(INDEX_INFO_TABLE_NAME, indexInfo);
+        tableIndices.put(INDEX_INFO_TABLE_NAME, Collections.emptyList());
     }
 
     // load tables from information_schema.tables
-    private void loadTables() {
-        Map<String, CountDownLatch> tableIndexCount = new ConcurrentHashMap<>();
-        for (RecordId recordId : (Iterable<RecordId>) tableInfo::ridIterator) {
-            TableInfoRecord record = new TableInfoRecord(tableInfo.getRecord(recordId));
-            if (!record.isAllocated()) {
-                tableInfo.deleteRecord(recordId);
-                continue;
-            }
-            tableInfoLookup.put(record.tableName, recordId);
-            tableIndexCount.put(record.tableName, new CountDownLatch(record.numIndices));
+    private void loadTablesAndIndices() {
+        Iterator<RecordId> iter = tableInfo.ridIterator();
 
-            if (record.tableName.equals(TABLE_INFO_TABLE_NAME)) {
-                continue;
-            }
+        LockContext dbContext = lockManager.databaseContext();
+        LockContext tableInfoContext = getTableInfoContext();
+        TransactionContext primaryTC = primaryInitTransaction.getTransactionContext();
 
-            LockContext tableContext = getTableContext(record.tableName, record.partNum);
-            if (tableContext.getExplicitLockType(initTransaction.getTransactionContext()) == LockType.NL) {
-                tableContext.acquire(initTransaction.getTransactionContext(), LockType.X);
-            }
+        dbContext.acquire(primaryTC, LockType.IX);
+        tableInfoContext.acquire(primaryTC, LockType.IX);
 
-            loadingProgress.register();
-            executor.execute(() -> {
-                loadingProgress.arriveAndAwaitAdvance();
+        for (RecordId recordId : (Iterable<RecordId>) () -> iter) {
+            TransactionContext.setTransaction(primaryTC);
 
-                HeapFile heapFile = new PageDirectory(bufferManager, record.partNum, record.pageNum, (short) 0,
-                                                      tableContext);
-                Table table = new Table(record.tableName, record.schema, heapFile, tableContext);
-                if (record.tableName.equals(INDEX_INFO_TABLE_NAME)) {
-                    indexInfo = table;
-                    indexInfo.setFullPageRecords();
-                    this.loadIndices(tableIndexCount);
+            try {
+                LockContext tableMetadataContext = tableInfoContext.childContext(recordId.getPageNum());
+                // need an X lock here even though we're only reading, to prevent others from attempting to
+                // fetch table object before it has been constructed
+                tableMetadataContext.acquire(primaryTC, LockType.X);
+
+                TableInfoRecord record = new TableInfoRecord(tableInfo.getRecord(recordId));
+                if (!record.isAllocated()) {
+                    tableInfo.deleteRecord(recordId);
+                    continue;
                 }
 
-                if (!record.isTemporary) {
+                if (record.isTemporary) {
+                    continue; // no need to load temp tables - they will be cleaned up eventually by recovery
+                }
+
+                tableInfoLookup.put(record.tableName, recordId);
+                tableIndices.putIfAbsent(record.tableName, Collections.synchronizedList(new ArrayList<>()));
+
+                if (record.tableName.startsWith(METADATA_TABLE_PREFIX)) {
+                    tableMetadataContext.release(primaryTC);
+                    continue;
+                }
+
+                loadingProgress.register();
+                executor.execute(() -> {
+                    loadingProgress.arriveAndAwaitAdvance();
+                    TransactionContext.setTransaction(primaryInitTransaction.getTransactionContext());
+
+                    // X(table) acquired during table ctor; not needed earlier because no one can even check
+                    // if table exists due to X(table metadata) lock
+                    LockContext tableContext = getTableContext(record.tableName, record.partNum);
+                    HeapFile heapFile = new PageDirectory(bufferManager, record.partNum, record.pageNum, (short) 0,
+                                                          tableContext);
+                    Table table = new Table(record.tableName, record.schema, heapFile, tableContext);
                     tableLookup.put(record.tableName, table);
-                    // the list only needs to be synchronized while indices are being loaded, as multiple
-                    // indices may attempt to add themselves to the list at the same time
-                    tableIndices.putIfAbsent(record.tableName, Collections.synchronizedList(new ArrayList<>()));
-                }
 
-                CountDownLatch latch = tableIndexCount.get(record.tableName);
-                try {
-                    latch.await();
-                } catch (InterruptedException e) {
-                    throw new DatabaseException(e);
-                }
-                synchronized (initTransaction) {
-                    tableContext.release(initTransaction.getTransactionContext());
-                }
+                    // sync on lock manager to ensure that multiple jobs don't
+                    // try to perform LockContext operations for the same transaction simultaneously
+                    synchronized (lockManager) {
+                        LockContext metadataContext = getTableInfoContext().childContext(recordId.getPageNum());
 
-                loadingProgress.arriveAndDeregister();
-            });
+                        tableContext.release(primaryTC);
+                        metadataContext.release(primaryTC);
+                    }
+
+                    TransactionContext.unsetTransaction();
+                    loadingProgress.arriveAndDeregister();
+                });
+            } finally {
+                TransactionContext.unsetTransaction();
+            }
         }
 
-        loadingProgress.arriveAndAwaitAdvance();
+        this.loadIndices();
+
+        loadingProgress.arriveAndAwaitAdvance(); // start table/index loading
 
         executor.execute(() -> {
-            loadingProgress.arriveAndAwaitAdvance();
-            initTransaction.commit();
+            loadingProgress.arriveAndAwaitAdvance(); // wait for all tables and indices to load
+            primaryInitTransaction.commit();
+            secondaryInitTransaction.commit();
             loadingProgress.arriveAndDeregister();
+            // add toggleable auto-escalate
         });
     }
 
     // load indices from information_schema.indices
-    private void loadIndices(Map<String, CountDownLatch> tableIndexCount) {
-        for (RecordId recordId : (Iterable<RecordId>) indexInfo::ridIterator) {
+    private void loadIndices() {
+        Iterator<RecordId> iter = indexInfo.ridIterator();
+
+        LockContext dbContext = lockManager.databaseContext();
+        LockContext tableInfoContext = getTableInfoContext();
+        LockContext indexInfoContext = getIndexInfoContext();
+        TransactionContext secondaryTC = secondaryInitTransaction.getTransactionContext();
+
+        dbContext.acquire(secondaryTC, LockType.IX);
+        tableInfoContext.acquire(secondaryTC, LockType.IS);
+        indexInfoContext.acquire(secondaryTC, LockType.IX);
+
+        for (RecordId recordId : (Iterable<RecordId>) () -> iter) {
+            LockContext indexMetadataContext = indexInfoContext.childContext(recordId.getPageNum());
+            // need an X lock here even though we're only reading, to prevent others from attempting to
+            // fetch index object before it has been constructed
+            indexMetadataContext.acquire(secondaryTC, LockType.X);
+
+            BPlusTreeMetadata metadata = parseIndexMetadata(indexInfo.getRecord(recordId));
+            if (metadata == null) {
+                indexInfo.deleteRecord(recordId);
+                return;
+            }
+
             loadingProgress.register();
             executor.execute(() -> {
-                try {
-                    BPlusTreeMetadata metadata = getIndexMetadata(indexInfo.getRecord(recordId));
-                    if (metadata == null) {
-                        indexInfo.deleteRecord(recordId);
-                        return;
-                    }
-                    String indexName = metadata.getName();
-                    LockContext indexContext = getIndexContext(indexName, metadata.getPartNum());
-                    synchronized (initTransaction) {
-                        indexContext.acquire(initTransaction.getTransactionContext(), LockType.X);
-                    }
+                RecordId tableMetadataRid = tableInfoLookup.get(metadata.getTableName());
+                LockContext tableMetadataContext = tableInfoContext.childContext(tableMetadataRid.getPageNum());
+                tableMetadataContext.acquire(secondaryTC, LockType.S); // S(metadata)
+                LockContext tableContext = getTableContext(metadata.getTableName());
+                tableContext.acquire(secondaryTC, LockType.S); // S(table)
 
+                loadingProgress.arriveAndAwaitAdvance();
+
+                String indexName = metadata.getName();
+                LockContext indexContext = getIndexContext(indexName, metadata.getPartNum());
+
+                try {
                     BPlusTree tree = new BPlusTree(bufferManager, metadata, indexContext);
                     if (!tableIndices.containsKey(metadata.getTableName())) {
                         // the list only needs to be synchronized while indices are being loaded, as multiple
@@ -341,15 +399,15 @@ public class Database implements AutoCloseable {
                     indexLookup.put(indexName, tree);
                     indexInfoLookup.put(indexName, recordId);
 
-                    synchronized (initTransaction) {
-                        indexContext.release(initTransaction.getTransactionContext());
+                    synchronized (loadingProgress) {
+                        indexContext.release(secondaryInitTransaction.getTransactionContext());
                     }
-                    tableIndexCount.get(prefixUserTableName(metadata.getTableName())).countDown();
                 } finally {
                     loadingProgress.arriveAndDeregister();
                 }
             });
         }
+        loadingProgress.arriveAndAwaitAdvance(); // start index loading
     }
 
     // wait until setup has finished
@@ -378,24 +436,12 @@ public class Database implements AutoCloseable {
         // wait for all transactions to terminate
         this.waitAllTransactions();
 
-        // clear out placeholder tableInfo entries
-        for (RecordId recordId : (Iterable<RecordId>) tableInfo::ridIterator) {
-            if (!new TableInfoRecord(tableInfo.getRecord(recordId)).isAllocated()) {
-                tableInfo.deleteRecord(recordId);
-            }
-        }
-
-        // clear out placeholder indexInfo entries
-        for (RecordId recordId : (Iterable<RecordId>) indexInfo::ridIterator) {
-            if (getIndexMetadata(indexInfo.getRecord(recordId)) == null) {
-                indexInfo.deleteRecord(recordId);
-            }
-        }
+        // finish executor tasks
+        this.executor.shutdown();
 
         this.bufferManager.evictAll();
 
         this.recoveryManager.close();
-        this.recoveryTransaction.close();
 
         this.tableInfo = null;
         this.indexInfo = null;
@@ -408,8 +454,6 @@ public class Database implements AutoCloseable {
 
         this.bufferManager.close();
         this.diskSpaceManager.close();
-
-        this.executor.shutdown();
     }
 
     public ExecutorService getExecutor() {
@@ -428,6 +472,7 @@ public class Database implements AutoCloseable {
         return bufferManager;
     }
 
+    @Deprecated
     public Table getTable(String tableName) {
         return tableLookup.get(prefixUserTableName(tableName));
     }
@@ -445,9 +490,9 @@ public class Database implements AutoCloseable {
     // schema for information_schema.tables
     private Schema getTableInfoSchema() {
         return new Schema(
-                   Arrays.asList("table_name", "part_num", "page_num", "is_temporary", "num_indices", "schema"),
+                   Arrays.asList("table_name", "part_num", "page_num", "is_temporary", "schema"),
                    Arrays.asList(Type.stringType(32), Type.intType(), Type.longType(), Type.boolType(),
-                                 Type.intType(), Type.stringType(MAX_SCHEMA_SIZE))
+                                 Type.stringType(MAX_SCHEMA_SIZE))
                );
     }
 
@@ -467,7 +512,6 @@ public class Database implements AutoCloseable {
         int partNum;
         long pageNum;
         boolean isTemporary;
-        int numIndices;
         Schema schema;
 
         TableInfoRecord(String tableName) {
@@ -475,7 +519,6 @@ public class Database implements AutoCloseable {
             this.partNum = -1;
             this.pageNum = -1;
             this.isTemporary = false;
-            this.numIndices = 0;
             this.schema = new Schema(Collections.emptyList(), Collections.emptyList());
         }
 
@@ -485,8 +528,7 @@ public class Database implements AutoCloseable {
             partNum = values.get(1).getInt();
             pageNum = values.get(2).getLong();
             isTemporary = values.get(3).getBool();
-            numIndices = values.get(4).getInt();
-            schema = Schema.fromBytes(ByteBuffer.wrap(values.get(5).toBytes()));
+            schema = Schema.fromBytes(ByteBuffer.wrap(values.get(4).toBytes()));
         }
 
         List<DataBox> toDataBox() {
@@ -495,7 +537,6 @@ public class Database implements AutoCloseable {
                        new IntDataBox(partNum),
                        new LongDataBox(pageNum),
                        new BoolDataBox(isTemporary),
-                       new IntDataBox(numIndices),
                        new StringDataBox(new String(schema.toBytes()), MAX_SCHEMA_SIZE)
                    );
         }
@@ -506,7 +547,7 @@ public class Database implements AutoCloseable {
     }
 
     // row of information_schema.indices --> BPlusTreeMetadata
-    private BPlusTreeMetadata getIndexMetadata(Record record) {
+    private BPlusTreeMetadata parseIndexMetadata(Record record) {
         List<DataBox> values = record.getValues();
         String tableName = values.get(0).getString();
         String colName = values.get(1).getString();
@@ -523,17 +564,12 @@ public class Database implements AutoCloseable {
         return new BPlusTreeMetadata(tableName, colName, keySchema, order, partNum, rootPageNum, height);
     }
 
-    // get the lock context for the log
-    private LockContext getLogContext() {
-        return lockManager.context("log", 1);
-    }
-
     // get the lock context for information_schema.tables
     private LockContext getTableInfoContext() {
         return lockManager.databaseContext().childContext(TABLE_INFO_TABLE_NAME, 1L);
     }
 
-    // get the lock context for information_schema.tables
+    // get the lock context for information_schema.indices
     private LockContext getIndexInfoContext() {
         return lockManager.databaseContext().childContext(INDEX_INFO_TABLE_NAME, 2L);
     }
@@ -549,7 +585,7 @@ public class Database implements AutoCloseable {
     }
 
     // get the lock context for an index
-    LockContext getIndexContext(String index, int partNum) {
+    private LockContext getIndexContext(String index, int partNum) {
         return lockManager.databaseContext().childContext("indices." + index, partNum);
     }
 
@@ -566,22 +602,52 @@ public class Database implements AutoCloseable {
         }
     }
 
-    private RecordId getTableInfoRecordId(String tableName) {
-        return Database.this.tableInfoLookup.compute(tableName, (String name, RecordId rid) -> {
-            if (rid == null) {
-                return Database.this.tableInfo.addRecord(new TableInfoRecord(name).toDataBox());
-            }
-            return rid;
-        });
+    // safely creates a row in information_schema.tables for tableName if none exists
+    // (with isAllocated=false), and locks the table metadata row with the specified lock to
+    // ensure no changes can be made until the current transaction commits.
+    void lockTableMetadata(String tableName, LockType lockType) {
+        // can't do this in one .compute() call, because we may need to block requesting
+        // locks on the database/information_schema.tables, and a large part of tableInfoLookup
+        // will be blocked while we're inside a compute call.
+        boolean mayNeedToCreate = !tableInfoLookup.containsKey(tableName);
+        if (mayNeedToCreate) {
+            // TODO(hw4_part2): acquire all locks needed on database/information_schema.tables before compute()
+            tableInfoLookup.compute(tableName, (tableName_, recordId) -> {
+                if (recordId != null) { // record created between containsKey call and this
+                    return recordId;
+                }
+                // should not block
+                return Database.this.tableInfo.addRecord(new TableInfoRecord(tableName_).toDataBox());
+            });
+        }
+
+        // TODO(hw4_part2): acquire all locks needed on the row in information_schema.tables
     }
 
-    private RecordId getIndexInfoRecordId(String tableName, String columnName) {
-        String indexName = tableName + "," + columnName;
-        return Database.this.indexInfoLookup.compute(indexName, (String name, RecordId rid) -> {
-            if (rid == null) {
+    private TableInfoRecord getTableMetadata(String tableName) {
+        RecordId rid = tableInfoLookup.get(tableName);
+        if (rid == null) {
+            return new TableInfoRecord(tableName);
+        }
+        return new TableInfoRecord(tableInfo.getRecord(rid));
+    }
+
+    // safely creates a row in information_schema.indices for tableName,columnName if none exists
+    // (with partNum=-1), and locks the index metadata row with the specified lock to ensure no
+    // changes can be made until the current transaction commits.
+    void lockIndexMetadata(String indexName, LockType lockType) {
+        // see getTableMetadata - same logic/structure, just with a different table
+        boolean mayNeedToCreate = !indexInfoLookup.containsKey(indexName);
+        if (mayNeedToCreate) {
+            // TODO(hw4_part2): acquire all locks needed on database/information_schema.indices before compute()
+            indexInfoLookup.compute(indexName, (indexName_, recordId) -> {
+                if (recordId != null) { // record created between containsKey call and this
+                    return recordId;
+                }
+                String[] parts = indexName.split(",", 2);
                 return Database.this.indexInfo.addRecord(Arrays.asList(
-                            new StringDataBox(tableName, 32),
-                            new StringDataBox(columnName, 32),
+                            new StringDataBox(parts[0], 32),
+                            new StringDataBox(parts[1], 32),
                             new IntDataBox(-1),
                             new IntDataBox(-1),
                             new LongDataBox(DiskSpaceManager.INVALID_PAGE_NUM),
@@ -589,9 +655,19 @@ public class Database implements AutoCloseable {
                             new IntDataBox(4),
                             new IntDataBox(-1)
                         ));
-            }
-            return rid;
-        });
+            });
+        }
+
+        // TODO(hw4_part2): acquire all locks needed on the row in information_schema.indices
+    }
+
+    private BPlusTreeMetadata getIndexMetadata(String tableName, String columnName) {
+        String indexName = tableName + "," + columnName;
+        RecordId rid = indexInfoLookup.get(indexName);
+        if (rid == null) {
+            return null;
+        }
+        return parseIndexMetadata(indexInfo.getRecord(rid));
     }
 
     /**
@@ -600,23 +676,41 @@ public class Database implements AutoCloseable {
      * @return the new Transaction
      */
     public synchronized Transaction beginTransaction() {
-        return beginTransaction(this.numTransactions);
-    }
-
-    /**
-     * Start a new transaction.
-     *
-     * @return the new Transaction
-     */
-    private synchronized Transaction beginTransaction(Long transactionNum) {
-        this.numTransactions = Math.max(this.numTransactions, transactionNum + 1);
-
-        TransactionImpl t = new TransactionImpl(transactionNum);
+        TransactionImpl t = new TransactionImpl(this.numTransactions, false);
         activeTransactions.register();
         if (activeTransactions.isTerminated()) {
             activeTransactions = new Phaser(1);
         }
+
+        this.recoveryManager.startTransaction(t);
+        ++this.numTransactions;
         return t;
+    }
+
+    /**
+     * Start a transaction for recovery.
+     *
+     * @param transactionNum transaction number
+     * @return the Transaction
+     */
+    private synchronized Transaction beginRecoveryTranscation(Long transactionNum) {
+        this.numTransactions = Math.max(this.numTransactions, transactionNum + 1);
+
+        TransactionImpl t = new TransactionImpl(transactionNum, true);
+        activeTransactions.register();
+        if (activeTransactions.isTerminated()) {
+            activeTransactions = new Phaser(1);
+        }
+
+        return t;
+    }
+
+    /**
+     * Updates the transaction number counter.
+     * @param nextTransactionNum transaction number of next transaction
+     */
+    private synchronized void setTransactionCounter(long nextTransactionNum) {
+        this.numTransactions = nextTransactionNum;
     }
 
     private class TransactionContextImpl extends AbstractTransactionContext {
@@ -654,7 +748,6 @@ public class Database implements AutoCloseable {
                     new IntDataBox(partNum),
                     new LongDataBox(pageNum),
                     new BoolDataBox(true),
-                    new IntDataBox(0),
                     new StringDataBox(new String(schema.toBytes()), MAX_SCHEMA_SIZE)));
             tableInfoLookup.put(tableName, recordId);
 
@@ -683,7 +776,8 @@ public class Database implements AutoCloseable {
             tableIndices.remove(tableName);
         }
 
-        private void deleteAllTempTables() {
+        @Override
+        public void deleteAllTempTables() {
             Set<String> keys = new HashSet<>(tempTables.keySet());
 
             for (String tableName : keys) {
@@ -933,9 +1027,8 @@ public class Database implements AutoCloseable {
 
         @Override
         public void close() {
-            this.deleteAllTempTables();
-
-            // TODO(hw4_part2): release all locks
+            // TODO(hw4_part2): release locks held by the transaction
+            return;
         }
 
         @Override
@@ -955,11 +1048,15 @@ public class Database implements AutoCloseable {
                 }
                 columnName = columnName.split("\\.")[1];
             }
+            // remove tables. - index names do not use it
+            if (tableName.startsWith("tables.")) {
+                tableName = tableName.substring(tableName.indexOf(".") + 1);
+            }
             String indexName = tableName + "," + columnName;
-            final String tableName1 = tableName;
-            final String columnName1 = columnName;
-            RecordId recordId = getIndexInfoRecordId(tableName, columnName);
-            BPlusTreeMetadata metadata = getIndexMetadata(Database.this.indexInfo.getRecord(recordId));
+
+            // TODO(hw4_part2): add locking
+
+            BPlusTreeMetadata metadata = getIndexMetadata(tableName, columnName);
             if (metadata == null) {
                 throw new DatabaseException("no index with name " + indexName);
             }
@@ -972,7 +1069,8 @@ public class Database implements AutoCloseable {
             return new Pair<>(indexName, Database.this.indexLookup.get(indexName));
         }
 
-        private Table getTable(String tableName) {
+        @Override
+        public Table getTable(String tableName) {
             if (this.aliases.containsKey(tableName)) {
                 tableName = this.aliases.get(tableName);
             }
@@ -985,8 +1083,9 @@ public class Database implements AutoCloseable {
                 tableName = prefixUserTableName(tableName);
             }
 
-            RecordId recordId = getTableInfoRecordId(tableName);
-            TableInfoRecord record = new TableInfoRecord(Database.this.tableInfo.getRecord(recordId));
+            // TODO(hw4_part2): add locking
+
+            TableInfoRecord record = getTableMetadata(tableName);
             if (!record.isAllocated()) {
                 throw new DatabaseException("no table with name " + tableName);
             }
@@ -1005,52 +1104,48 @@ public class Database implements AutoCloseable {
 
     private class TransactionImpl extends AbstractTransaction {
         private long transNum;
+        private boolean recoveryTransaction;
         private TransactionContext transactionContext;
 
-        private TransactionImpl(long transNum) {
+        private TransactionImpl(long transNum, boolean recovery) {
             this.transNum = transNum;
+            this.recoveryTransaction = recovery;
             this.transactionContext = new TransactionContextImpl(transNum);
         }
 
         @Override
         protected void startCommit() {
-            this.prepareCommit();
-            executor.execute(this::runCommit);
-        }
+            // TODO(hw5): replace immediate cleanup() call with job (the commented out code)
 
-        /**
-         * Called before commit() returns to user.
-         */
-        private void prepareCommit() {
-            // TODO(hw5): move cleanup() to runCommit and call into recoveryManager
+            transactionContext.deleteAllTempTables();
+
+            recoveryManager.commit(transNum);
 
             this.cleanup();
-        }
-
-        /**
-         * Called after commit() returns to user.
-         */
-        private void runCommit() {
-            // TODO(hw5): see prepareCommit
+            /*
+            executor.execute(this::cleanup);
+            */
         }
 
         @Override
         protected void startRollback() {
             executor.execute(() -> {
-                // TODO(hw5): call into recoveryManager before cleaning up
-
+                recoveryManager.abort(transNum);
                 this.cleanup();
             });
-
-            throw new UnsupportedOperationException("TODO(hw5): implement");
         }
 
-        private void cleanup() {
+        @Override
+        public void cleanup() {
+            if (getStatus() == Status.COMPLETE) {
+                return;
+            }
+
+            if (!this.recoveryTransaction) {
+                recoveryManager.end(transNum);
+            }
+
             transactionContext.close();
-
-            // TODO(hw5): call into recoveryManager
-
-            this.end();
             activeTransactions.arriveAndDeregister();
         }
 
@@ -1064,38 +1159,31 @@ public class Database implements AutoCloseable {
             if (tableName.contains(".") && !tableName.startsWith("tables.")) {
                 throw new IllegalArgumentException("name of new table may not contain '.'");
             }
+
             String prefixedTableName = prefixUserTableName(tableName);
             TransactionContext.setTransaction(transactionContext);
             try {
-                int[] partNum = new int[1];
-                long[] pageNum = new long[1];
-                Database.this.tableInfoLookup.compute(prefixedTableName, (String t, RecordId recordId) -> {
-                    if (recordId != null && new TableInfoRecord(tableInfo.getRecord(recordId)).isAllocated()) {
-                        throw new DatabaseException("table " + t + " already exists");
-                    }
-                    partNum[0] = diskSpaceManager.allocPart();
-                    pageNum[0] = diskSpaceManager.allocPage(partNum[0]);
-                    List<DataBox> record = Arrays.asList(
-                        new StringDataBox(prefixedTableName, 32),
-                        new IntDataBox(partNum[0]),
-                        new LongDataBox(pageNum[0]),
-                        new BoolDataBox(false),
-                        new IntDataBox(0),
-                        new StringDataBox(new String(s.toBytes()), MAX_SCHEMA_SIZE)
-                    );
-                    if (recordId == null) {
-                        return tableInfo.addRecord(record);
-                    } else {
-                        tableInfo.updateRecord(record, recordId);
-                        return recordId;
-                    }
-                });
-                LockContext tableContext = getTableContext(prefixedTableName, partNum[0]);
-                HeapFile heapFile = new PageDirectory(bufferManager, partNum[0], pageNum[0], (short) 0,
-                                                      tableContext);
-                Database.this.tableLookup.put(prefixedTableName, new Table(prefixedTableName, s, heapFile,
-                                              tableContext));
-                Database.this.tableIndices.put(prefixedTableName, new ArrayList<>());
+                // TODO(hw4_part2): add locking
+
+                lockTableMetadata(prefixedTableName, LockType.NL);
+
+                TableInfoRecord record = getTableMetadata(prefixedTableName);
+                if (record.isAllocated()) {
+                    throw new DatabaseException("table " + prefixedTableName + " already exists");
+                }
+
+                record.partNum = diskSpaceManager.allocPart();
+                record.pageNum = diskSpaceManager.allocPage(record.partNum);
+                record.isTemporary = false;
+                record.schema = s;
+                tableInfo.updateRecord(record.toDataBox(), tableInfoLookup.get(prefixedTableName));
+
+                LockContext tableContext = getTableContext(prefixedTableName, record.partNum);
+                HeapFile heapFile = new PageDirectory(bufferManager, record.partNum, record.pageNum,
+                                                      (short) 0, tableContext);
+                tableLookup.put(prefixedTableName, new Table(prefixedTableName, s,
+                                heapFile, tableContext));
+                tableIndices.put(prefixedTableName, new ArrayList<>());
             } finally {
                 TransactionContext.unsetTransaction();
             }
@@ -1106,32 +1194,30 @@ public class Database implements AutoCloseable {
             if (tableName.contains(".") && !tableName.startsWith("tables.")) {
                 throw new IllegalArgumentException("name of table may not contain '.': " + tableName);
             }
+
             String prefixedTableName = prefixUserTableName(tableName);
             TransactionContext.setTransaction(transactionContext);
             try {
                 // TODO(hw4_part2): add locking
-                RecordId tableRecordId = Database.this.tableInfoLookup.compute(prefixedTableName,
-                (String name, RecordId recordId) -> {
-                    if (recordId == null) {
-                        throw new DatabaseException("table " + name + " does not exist");
-                    }
-                    return recordId;
-                });
 
-                TableInfoRecord infoRecord = new TableInfoRecord(Database.this.tableInfo.getRecord(tableRecordId));
-                if (!infoRecord.isAllocated()) {
-                    throw new DatabaseException("table " + tableName + " does not exist");
+                lockTableMetadata(prefixedTableName, LockType.NL);
+
+                TableInfoRecord record = getTableMetadata(prefixedTableName);
+                if (!record.isAllocated()) {
+                    throw new DatabaseException("table " + prefixedTableName + " does not exist");
                 }
-                Database.this.tableInfo.updateRecord(new TableInfoRecord(tableName).toDataBox(), tableRecordId);
 
-                for (String indexName : new ArrayList<>(Database.this.tableIndices.get(prefixedTableName))) {
+                for (String indexName : new ArrayList<>(tableIndices.get(prefixedTableName))) {
                     String[] parts = indexName.split(",");
                     dropIndex(parts[0], parts[1]);
                 }
 
-                Database.this.tableIndices.remove(prefixedTableName);
-                Database.this.tableLookup.remove(prefixedTableName);
-                bufferManager.freePart(infoRecord.partNum);
+                RecordId tableRecordId = tableInfoLookup.get(prefixedTableName);
+                tableInfo.updateRecord(new TableInfoRecord(prefixedTableName).toDataBox(), tableRecordId);
+
+                tableIndices.remove(prefixedTableName);
+                tableLookup.remove(prefixedTableName);
+                bufferManager.freePart(record.partNum);
             } finally {
                 TransactionContext.unsetTransaction();
             }
@@ -1165,10 +1251,16 @@ public class Database implements AutoCloseable {
             try {
                 // TODO(hw4_part2): add locking
 
-                Schema s = getTable(tableName).getSchema();
+                lockTableMetadata(prefixedTableName, LockType.NL);
+
+                TableInfoRecord tableMetadata = getTableMetadata(prefixedTableName);
+                if (!tableMetadata.isAllocated()) {
+                    throw new DatabaseException("table " + tableName + " does not exist");
+                }
+
+                Schema s = tableMetadata.schema;
                 List<String> schemaColNames = s.getFieldNames();
                 List<Type> schemaColType = s.getFieldTypes();
-
                 if (!schemaColNames.contains(columnName)) {
                     throw new DatabaseException("table " + tableName + " does not have a column " + columnName);
                 }
@@ -1177,38 +1269,30 @@ public class Database implements AutoCloseable {
                 Type colType = schemaColType.get(columnIndex);
                 String indexName = tableName + "," + columnName;
 
+                lockIndexMetadata(indexName, LockType.NL);
+
+                BPlusTreeMetadata metadata = getIndexMetadata(tableName, columnName);
+                if (metadata != null) {
+                    throw new DatabaseException("index already exists on " + tableName + "(" + columnName + ")");
+                }
+
                 int order = BPlusTree.maxOrder(BufferManager.EFFECTIVE_PAGE_SIZE, colType);
-                BPlusTreeMetadata[] metadata = new BPlusTreeMetadata[1];
-                indexInfoLookup.compute(indexName, (String name, RecordId recordId) -> {
-                    if (recordId != null && getIndexMetadata(indexInfo.getRecord(recordId)) != null) {
-                        throw new DatabaseException("index already exists on " + tableName + "(" + columnName + ")");
-                    }
-                    int partNum = diskSpaceManager.allocPart();
-                    metadata[0] = new BPlusTreeMetadata(tableName, columnName, colType, order,
-                                                        partNum, DiskSpaceManager.INVALID_PAGE_NUM, -1);
-                    List<DataBox> record = Arrays.asList(
-                        new StringDataBox(tableName, 32),
-                        new StringDataBox(columnName, 32),
-                        new IntDataBox(order),
-                        new IntDataBox(partNum),
-                        new LongDataBox(DiskSpaceManager.INVALID_PAGE_NUM),
-                        new IntDataBox(colType.getTypeId().ordinal()),
-                        new IntDataBox(colType.getSizeInBytes()),
-                        new IntDataBox(-1)
-                    );
-                    if (recordId == null) {
-                        return indexInfo.addRecord(record);
-                    } else {
-                        indexInfo.updateRecord(record, recordId);
-                        return recordId;
-                    }
-                });
-                LockContext indexContext = getIndexContext(indexName, metadata[0].getPartNum());
-                TableInfoRecord info = new TableInfoRecord(tableInfo.getRecord(tableInfoLookup.get(
-                            prefixedTableName)));
-                ++info.numIndices;
-                tableInfo.updateRecord(info.toDataBox(), tableInfoLookup.get(prefixedTableName));
-                indexLookup.put(indexName, new BPlusTree(bufferManager, metadata[0], indexContext));
+                List<DataBox> values = Arrays.asList(
+                                           new StringDataBox(tableName, 32),
+                                           new StringDataBox(columnName, 32),
+                                           new IntDataBox(order),
+                                           new IntDataBox(diskSpaceManager.allocPart()),
+                                           new LongDataBox(DiskSpaceManager.INVALID_PAGE_NUM),
+                                           new IntDataBox(colType.getTypeId().ordinal()),
+                                           new IntDataBox(colType.getSizeInBytes()),
+                                           new IntDataBox(-1)
+                                       );
+                indexInfo.updateRecord(values, indexInfoLookup.get(indexName));
+                metadata = parseIndexMetadata(new Record(values));
+                assert (metadata != null);
+
+                LockContext indexContext = getIndexContext(indexName, metadata.getPartNum());
+                indexLookup.put(indexName, new BPlusTree(bufferManager, metadata, indexContext));
                 tableIndices.get(prefixedTableName).add(indexName);
 
                 // load data into index
@@ -1230,47 +1314,30 @@ public class Database implements AutoCloseable {
         @Override
         public void dropIndex(String tableName, String columnName) {
             String prefixedTableName = prefixUserTableName(tableName);
+            String indexName = tableName + "," + columnName;
             TransactionContext.setTransaction(transactionContext);
             try {
                 // TODO(hw4_part2): add locking
 
-                String indexName = tableName +  "," + columnName;
-                RecordId[] recordId = new RecordId[1];
-                int partNum = indexLookup.compute(indexName, (String name, BPlusTree tree) -> {
-                    if (tree == null) {
-                        throw new DatabaseException("no index on " + tableName + "(" + columnName + ")");
-                    }
-                    recordId[0] = indexInfoLookup.get(name);
-                    return tree;
-                }).getPartNum();
+                lockIndexMetadata(indexName, LockType.NL);
 
-                BPlusTree t = indexLookup.compute(indexName, (String name, BPlusTree tree) -> {
-                    if (tree == null) {
-                        throw new DatabaseException("no index on " + tableName + "(" + columnName + ")");
-                    }
-
-                    if (tree.getPartNum() != partNum) {
-                        return tree;
-                    }
-
-                    tableIndices.get(prefixedTableName).remove(indexName);
-                    return null;
-                });
-
-                if (t != null) {
-                    // original index has been dropped, but a new index was made on the same column
-                    dropIndex(tableName, columnName);
-                    return;
+                BPlusTreeMetadata metadata = getIndexMetadata(tableName, columnName);
+                if (metadata == null) {
+                    throw new DatabaseException("no index on " + tableName + "(" + columnName + ")");
                 }
-
-                indexInfoLookup.remove(indexName);
-                BPlusTreeMetadata metadata = getIndexMetadata(indexInfo.deleteRecord(recordId[0]));
-                TableInfoRecord info = new TableInfoRecord(tableInfo.getRecord(tableInfoLookup.get(
-                            prefixedTableName)));
-                --info.numIndices;
-                tableInfo.updateRecord(info.toDataBox(), tableInfoLookup.get(prefixedTableName));
+                indexInfo.updateRecord(Arrays.asList(
+                                           new StringDataBox(tableName, 32),
+                                           new StringDataBox(columnName, 32),
+                                           new IntDataBox(-1),
+                                           new IntDataBox(-1),
+                                           new LongDataBox(DiskSpaceManager.INVALID_PAGE_NUM),
+                                           new IntDataBox(TypeId.INT.ordinal()),
+                                           new IntDataBox(4),
+                                           new IntDataBox(-1)
+                                       ), indexInfoLookup.get(indexName));
 
                 bufferManager.freePart(metadata.getPartNum());
+                indexLookup.remove(indexName);
             } finally {
                 TransactionContext.unsetTransaction();
             }

@@ -138,5 +138,35 @@ public class TestLockUtil {
                      ), lockManager.log);
     }
 
+    @Test
+    @Category(PublicTests.class)
+    public void testSimpleNL() {
+        lockManager.startLog();
+        LockUtil.ensureSufficientLockHeld(tableContext, LockType.NL);
+        assertEquals(Collections.emptyList(), lockManager.log);
+    }
+
+    @Test
+    @Category(PublicTests.class)
+    public void testSimpleIS() {
+        lockManager.startLog();
+        LockUtil.ensureSufficientLockHeld(tableContext, LockType.IS);
+        assertEquals(Arrays.asList(
+                         "acquire 0 database IS",
+                         "acquire 0 database/table1 IS"
+                     ), lockManager.log);
+    }
+
+    @Test
+    @Category(PublicTests.class)
+    public void testSimpleIX() {
+        lockManager.startLog();
+        LockUtil.ensureSufficientLockHeld(tableContext, LockType.IX);
+        assertEquals(Arrays.asList(
+                         "acquire 0 database IX",
+                         "acquire 0 database/table1 IX"
+                     ), lockManager.log);
+    }
+
 }
 

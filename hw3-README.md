@@ -2,9 +2,9 @@
 
 This homework is divided into two parts.
 
-Part 1 is due: **Wednesday, 10/16/2019, 11:59 PM**.
+Part 1 is due: **Thursday, 10/17/2019, 11:59 PM**.
 
-Part 2 is due: **Wednesday, 10/23/2019, 11:59 PM**.
+Part 2 is due: **Thursday, 10/24/2019, 11:59 PM**.
 
 Part 2 does not require Part 1 to be completed first, but you will need to make sure
 any code you write for Part 1 does not throw an exception before starting Part 2. See
@@ -245,7 +245,7 @@ then,
 - your score for part 1 public tests (20% of grade) would be `0.44/1.00`,
 - your score for part 1 hidden tests (13.33% of grade) would be `0.65/1.00`,
 - your score for part 2 public tests (40% of grade) would be `0.55/1.00`,
-- your score for part 2 hideen tests (26.67% of grade) would be `0.43/1.00`,
+- your score for part 2 hidden tests (26.67% of grade) would be `0.43/1.00`,
 
 and your overall score would be:
 `(0.20 * 0.44 + 0.1333 * 0.65) + (0.4 * 0.55 + 0.2667 * 0.43)`

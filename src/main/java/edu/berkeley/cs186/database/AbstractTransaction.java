@@ -24,7 +24,6 @@ public abstract class AbstractTransaction implements Transaction {
             throw new IllegalStateException("transaction not in running state, cannot commit");
         }
         startCommit();
-        status = Status.COMMITTING;
     }
 
     /**
@@ -36,11 +35,6 @@ public abstract class AbstractTransaction implements Transaction {
             throw new IllegalStateException("transaction not in running state, cannot rollback");
         }
         startRollback();
-        status = Status.ABORTING;
-    }
-
-    protected final void end() {
-        status = Status.COMPLETE;
     }
 
     @Override
@@ -48,13 +42,18 @@ public abstract class AbstractTransaction implements Transaction {
         return status;
     }
 
+    @Override
+    public void setStatus(Status status) {
+        this.status = status;
+    }
+
     /**
      * Implements close() as commit() when abort/commit not called - so that we can write:
-     * <p>
+     *
      * try (Transaction t = ...) {
      * ...
      * }
-     * <p>
+     *
      * and have the transaction commit.
      */
     @Override

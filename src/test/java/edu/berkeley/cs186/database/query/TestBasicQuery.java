@@ -12,7 +12,6 @@ import java.io.File;
 import java.util.Collections;
 import java.util.Iterator;
 
-import edu.berkeley.cs186.database.table.Table;
 import edu.berkeley.cs186.database.table.Record;
 import edu.berkeley.cs186.database.databox.IntDataBox;
 import edu.berkeley.cs186.database.databox.StringDataBox;
@@ -86,18 +85,16 @@ public class TestBasicQuery {
     @Test
     @Category(PublicTests.class)
     public void testProject() {
-        Table table = db.getTable(TABLENAME);
-
-        //creates a 10 records int 0 to 9
-        for (int i = 0; i < 10; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table.buildStatistics(10);
-
         try(Transaction transaction = this.db.beginTransaction()) {
+            //creates a 10 records int 0 to 9
+            for (int i = 0; i < 10; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME, r.getValues());
+            }
+
+            //build the statistics on the table
+            transaction.getTransactionContext().getTable(TABLENAME).buildStatistics(10);
+
             // add a project to the QueryPlan
             QueryPlan query = transaction.query("T");
             query.project(Collections.singletonList("int"));
@@ -120,18 +117,16 @@ public class TestBasicQuery {
     @Test
     @Category(PublicTests.class)
     public void testSelect() {
-        Table table = db.getTable(TABLENAME);
-
-        //creates a 10 records int 0 to 9
-        for (int i = 0; i < 10; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table.buildStatistics(10);
-
         try(Transaction transaction = db.beginTransaction()) {
+            //creates a 10 records int 0 to 9
+            for (int i = 0; i < 10; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME, r.getValues());
+            }
+
+            //build the statistics on the table
+            transaction.getTransactionContext().getTable(TABLENAME).buildStatistics(10);
+
             // add a select to the QueryPlan
             QueryPlan query = transaction.query("T");
             query.select("int", PredicateOperator.EQUALS, new IntDataBox(9));
@@ -152,18 +147,16 @@ public class TestBasicQuery {
     @Test
     @Category(PublicTests.class)
     public void testGroupBy() {
-        Table table = db.getTable(TABLENAME);
-
-        //creates a 100 records int 0 to 9
-        for (int i = 0; i < 100; ++i) {
-            Record r = createRecordWithAllTypes(false, i % 10, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table.buildStatistics(10);
-
         try(Transaction transaction = db.beginTransaction()) {
+            //creates a 100 records int 0 to 9
+            for (int i = 0; i < 100; ++i) {
+                Record r = createRecordWithAllTypes(false, i % 10, "!", 0.0f);
+                transaction.insert(TABLENAME, r.getValues());
+            }
+
+            //build the statistics on the table
+            transaction.getTransactionContext().getTable(TABLENAME).buildStatistics(10);
+
             // add a project and a groupby to the QueryPlan
             QueryPlan query = transaction.query("T");
             query.groupBy("T.int");

@@ -39,10 +39,10 @@ public class TestOptimizationJoins {
     @Rule
     public TemporaryFolder tempFolder = new TemporaryFolder();
 
-    // 6 second max per method tested.
+    // 10 second max per method tested.
     @Rule
     public TestRule globalTimeout = new DisableOnDebug(Timeout.millis((long) (
-                6000 * TimeoutScaling.factor)));
+                10000 * TimeoutScaling.factor)));
 
     @Before
     public void beforeEach() throws Exception {
@@ -91,18 +91,14 @@ public class TestOptimizationJoins {
     @Test
     @Category(PublicTests.class)
     public void testJoinTypeA() {
-        Table table = db.getTable(TABLENAME);
-
-        //creates a 2000 records int 0 to 999
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table.buildStatistics(10);
-
         try(Transaction transaction = this.db.beginTransaction()) {
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME, r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME).buildStatistics(10);
+
             // add a join and a select to the QueryPlan
             QueryPlan query = transaction.query("T", "t1");
             query.join("T", "t2", "t1.int", "t2.int");
@@ -120,18 +116,14 @@ public class TestOptimizationJoins {
     @Test
     @Category(PublicTests.class)
     public void testJoinTypeB() {
-        Table table = db.getTable(TABLENAME + "I");
-
-        //creates a 2000 records int 0 to 999
-        for (int i = 0; i < 10; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table.buildStatistics(10);
-
         try(Transaction transaction = this.db.beginTransaction()) {
+            for (int i = 0; i < 10; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME + "I", r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME + "I").buildStatistics(10);
+
             // add a join and a select to the QueryPlan
             QueryPlan query = transaction.query("TI", "t1");
             query.join("TI", "t2", "t1.int", "t2.int");
@@ -149,23 +141,17 @@ public class TestOptimizationJoins {
     @Test
     @Category(PublicTests.class)
     public void testJoinTypeC() {
-        Table table = db.getTable(TABLENAME + "I");
-
-        //creates a 2000 records int 0 to 999
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table.buildStatistics(10);
-
         try(Transaction transaction = db.beginTransaction()) {
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME + "I", r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME + "I").buildStatistics(10);
+
             // add a join and a select to the QueryPlan
-//            QueryPlan query = transaction.query("TI", "t1");
-//            query.join("TI", "t2", "t1.int", "t2.int");
-            QueryPlan query = transaction.query("TI");
-            query.join("TI", "t2", "TI.int", "t2.int");
+            QueryPlan query = transaction.query("TI", "t1");
+            query.join("TI", "t2", "t1.int", "t2.int");
             query.select("int", PredicateOperator.EQUALS, new IntDataBox(9));
 
             // execute the query
@@ -182,40 +168,26 @@ public class TestOptimizationJoins {
     @Test
     @Category(PublicTests.class)
     public void testJoinOrderA() {
-        Table table1 = db.getTable(TABLENAME + "o1");
-
-        //creates a 100 records int 0 to 99
-        for (int i = 0; i < 10; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table1.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table1.buildStatistics(10);
-
-        Table table2 = db.getTable(TABLENAME + "o2");
-
-        //creates a 100 records int 0 to 99
-        for (int i = 0; i < 100; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table2.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table2.buildStatistics(10);
-
-        Table table3 = db.getTable(TABLENAME + "o3");
-
-        //creates a 100 records int 0 to 99
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table3.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table3.buildStatistics(10);
-
         try(Transaction transaction = db.beginTransaction()) {
+            for (int i = 0; i < 10; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME + "o1", r.getValues());
+            }
+
+            for (int i = 0; i < 100; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME + "o2", r.getValues());
+            }
+
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME + "o3", r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME + "o1").buildStatistics(10);
+            transaction.getTransactionContext().getTable(TABLENAME + "o2").buildStatistics(10);
+            transaction.getTransactionContext().getTable(TABLENAME + "o3").buildStatistics(10);
+
             // add a join and a select to the QueryPlan
             QueryPlan query = transaction.query("To1");
             query.join("To2", "To1.one_int", "To2.two_int");
@@ -234,51 +206,28 @@ public class TestOptimizationJoins {
     @Test
     @Category(PublicTests.class)
     public void testJoinOrderB() {
-        Table table1 = db.getTable(TABLENAME + "o1");
-
-        //creates a 100 records int 0 to 99
-        for (int i = 0; i < 10; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table1.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table1.buildStatistics(10);
-
-        Table table2 = db.getTable(TABLENAME + "o2");
-
-        //creates a 100 records int 0 to 99
-        for (int i = 0; i < 100; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table2.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table2.buildStatistics(10);
-
-        Table table3 = db.getTable(TABLENAME + "o3");
-
-        //creates a 100 records int 0 to 99
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table3.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table3.buildStatistics(10);
-
-        Table table4 = db.getTable(TABLENAME + "o4");
-
-        //creates a 100 records int 0 to 99
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table4.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table4.buildStatistics(10);
-
         try(Transaction transaction = db.beginTransaction()) {
+            for (int i = 0; i < 10; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME + "o1", r.getValues());
+            }
+
+            for (int i = 0; i < 100; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME + "o2", r.getValues());
+            }
+
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME + "o3", r.getValues());
+                transaction.insert(TABLENAME + "o4", r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME + "o1").buildStatistics(10);
+            transaction.getTransactionContext().getTable(TABLENAME + "o2").buildStatistics(10);
+            transaction.getTransactionContext().getTable(TABLENAME + "o3").buildStatistics(10);
+            transaction.getTransactionContext().getTable(TABLENAME + "o4").buildStatistics(10);
+
             // add a join and a select to the QueryPlan
             QueryPlan query = transaction.query("To1");
             query.join("To2", "To1.one_int", "To2.two_int");

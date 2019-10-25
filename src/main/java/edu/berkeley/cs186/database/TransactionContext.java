@@ -8,6 +8,7 @@ import edu.berkeley.cs186.database.memory.Page;
 import edu.berkeley.cs186.database.table.Record;
 import edu.berkeley.cs186.database.table.RecordId;
 import edu.berkeley.cs186.database.table.Schema;
+import edu.berkeley.cs186.database.table.Table;
 import edu.berkeley.cs186.database.table.stats.TableStats;
 
 import java.util.ArrayList;
@@ -85,6 +86,11 @@ public interface TransactionContext extends AutoCloseable {
     String createTempTable(Schema schema);
 
     /**
+     * Deletes all temporary tables within this transaction.
+     */
+    void deleteAllTempTables();
+
+    /**
      * Specify an alias mapping for this transaction. Recursive aliasing is
      * not allowed.
      * @param aliasMap mapping of alias names to original table names
@@ -142,7 +148,7 @@ public interface TransactionContext extends AutoCloseable {
     void runDeleteRecordWhere(String tableName, String predColumnName, PredicateOperator predOperator,
                               DataBox predValue);
 
-    // Schema ///////////////////////////////////////////////////////////////
+    // Table/Schema /////////////////////////////////////////////////////////
 
     /**
      * @param tableName name of table to get schema of
@@ -157,6 +163,8 @@ public interface TransactionContext extends AutoCloseable {
      * @return schema of table
      */
     Schema getFullyQualifiedSchema(String tableName);
+
+    Table getTable(String tableName);
 
     // Statistics ///////////////////////////////////////////////////////////
 

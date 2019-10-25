@@ -45,6 +45,7 @@ public class TestJoinOperator {
         File tempDir = tempFolder.newFolder("joinTest");
         d = new Database(tempDir.getAbsolutePath(), 256);
         d.setWorkMem(5); // B=5
+        d.waitAllTransactions();
     }
 
     @After

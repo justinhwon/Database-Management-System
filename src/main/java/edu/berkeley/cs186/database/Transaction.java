@@ -19,7 +19,8 @@ public interface Transaction extends AutoCloseable {
         RUNNING,
         COMMITTING,
         ABORTING,
-        COMPLETE;
+        COMPLETE,
+        RECOVERY_ABORTING; // "ABORTING" state for txns during restart recovery
 
         private static Status[] values = Status.values();
 
@@ -47,6 +48,14 @@ public interface Transaction extends AutoCloseable {
     Status getStatus();
 
     /**
+     * Sets status of transaction. Should not be used directly by
+     * users of the transaction (this should be called by the recovery
+     * manager).
+     * @param status new status of transaction
+     */
+    void setStatus(Status status);
+
+    /**
      * Commits a transaction. Equivalent to
      *      COMMIT
      *
@@ -61,6 +70,14 @@ public interface Transaction extends AutoCloseable {
      * HW5 (Recovery) must be fully implemented.
      */
     void rollback();
+
+    /**
+     * Cleanup transaction (when transaction ends). Does not
+     * need to be called directly, as commit/rollback should
+     * call cleanup themselves. Does not do anything on successive calls
+     * when called multiple times.
+     */
+    void cleanup();
 
     @Override
     void close();

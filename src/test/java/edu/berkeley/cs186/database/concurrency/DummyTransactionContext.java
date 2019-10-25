@@ -12,10 +12,7 @@ import edu.berkeley.cs186.database.databox.DataBox;
 import edu.berkeley.cs186.database.index.BPlusTreeMetadata;
 import edu.berkeley.cs186.database.memory.Page;
 import edu.berkeley.cs186.database.query.QueryPlan;
-import edu.berkeley.cs186.database.table.Record;
-import edu.berkeley.cs186.database.table.RecordId;
-import edu.berkeley.cs186.database.table.RecordIterator;
-import edu.berkeley.cs186.database.table.Schema;
+import edu.berkeley.cs186.database.table.*;
 import edu.berkeley.cs186.database.table.stats.TableStats;
 
 /**
@@ -40,6 +37,11 @@ public class DummyTransactionContext extends AbstractTransactionContext {
 
     @Override
     public String createTempTable(Schema schema) {
+        throw new UnsupportedOperationException("dummy transaction cannot do this");
+    }
+
+    @Override
+    public void deleteAllTempTables() {
         throw new UnsupportedOperationException("dummy transaction cannot do this");
     }
 
@@ -195,6 +197,11 @@ public class DummyTransactionContext extends AbstractTransactionContext {
 
     @Override
     public Schema getFullyQualifiedSchema(String tableName) {
+        throw new UnsupportedOperationException("dummy transaction cannot do this");
+    }
+
+    @Override
+    public Table getTable(String tableName) {
         throw new UnsupportedOperationException("dummy transaction cannot do this");
     }
 

@@ -4,7 +4,12 @@ import edu.berkeley.cs186.database.Transaction;
 import edu.berkeley.cs186.database.io.DiskSpaceManager;
 import edu.berkeley.cs186.database.memory.BufferManager;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class DummyRecoveryManager implements RecoveryManager {
+    private Map<Long, Transaction> runningTransactions = new HashMap<>();
+
     @Override
     public void initialize() {}
 
@@ -12,11 +17,14 @@ public class DummyRecoveryManager implements RecoveryManager {
     public void setManagers(DiskSpaceManager diskSpaceManager, BufferManager bufferManager) {}
 
     @Override
-    public void startTransaction(Transaction transaction) {}
+    public void startTransaction(Transaction transaction) {
+        runningTransactions.put(transaction.getTransNum(), transaction);
+    }
 
     @Override
     public long commit(long transNum) {
-        return 0;
+        runningTransactions.get(transNum).setStatus(Transaction.Status.COMMITTING);
+        return 0L;
     }
 
     @Override
@@ -26,40 +34,42 @@ public class DummyRecoveryManager implements RecoveryManager {
 
     @Override
     public long end(long transNum) {
-        return 0;
+        runningTransactions.get(transNum).setStatus(Transaction.Status.COMPLETE);
+        runningTransactions.remove(transNum);
+        return 0L;
     }
 
     @Override
     public void pageFlushHook(long pageNum, long pageLSN) {}
 
     @Override
+    public void diskIOHook(long pageNum) {}
+
+    @Override
     public long logPageWrite(long transNum, long pageNum, short pageOffset, byte[] before,
                              byte[] after) {
-        return 0;
+        return 0L;
     }
 
     @Override
     public long logAllocPart(long transNum, int partNum) {
-        return 0;
+        return 0L;
     }
 
     @Override
     public long logFreePart(long transNum, int partNum) {
-        return 0;
+        return 0L;
     }
 
     @Override
     public long logAllocPage(long transNum, long pageNum) {
-        return 0;
+        return 0L;
     }
 
     @Override
     public long logFreePage(long transNum, long pageNum) {
-        return 0;
+        return 0L;
     }
-
-    @Override
-    public void logDiskIO(long pageNum) {}
 
     @Override
     public void savepoint(long transNum, String name) {

@@ -24,92 +24,116 @@ public interface RecoveryManager extends AutoCloseable {
     void setManagers(DiskSpaceManager diskSpaceManager, BufferManager bufferManager);
 
     /**
-     * Adds transaction to transaction table.
-     * @param transaction new transaction to add to transaction table
+     * Called when a new transaction is started.
+     * @param transaction new transaction
      */
     void startTransaction(Transaction transaction);
 
     /**
-     * Write a commit record to the log, and flush it to disk before returning.
+     * Called when a transaction is about to start committing.
      * @param transNum transaction being committed
+     * @return LSN of the commit record
      */
     long commit(long transNum);
 
     /**
-     * Writes an abort record to the log.
+     * Called when a transaction is set to be aborted.
      * @param transNum transaction being aborted
+     * @return LSN of the abort record
      */
     long abort(long transNum);
 
     /**
-     * Cleans up and ends the transaction. This method should write any needed
-     * CLRs to the log, as well as the END record.
-     * @param transNum transaction to finish
+     * Called when a transaction is cleaning up; this should roll back
+     * changes if the transaction is aborting.
+     * @param transNum transaction to end
+     * @return LSN of the end record
      */
     long end(long transNum);
 
     /**
-     * Called before a page is flushed from the buffer cache. The log must be flushed
-     * up to the pageLSN of the page before the page is flushed.
+     * Called before a page is flushed from the buffer cache. This
+     * method is never called on a log page.
+     *
      * @param pageNum page number of page about to be flushed
      * @param pageLSN pageLSN of page about to be flushed
      */
     void pageFlushHook(long pageNum, long pageLSN);
 
     /**
-     * Log a write to a page. Should do nothing and return -1 if the page is a log page. If the record
-     * would be too big (length * 2 > effective page size), then an undo-only update record is written,
-     * followed by a redo-only update record.
+     * Called when a page has been updated on disk.
+     * @param pageNum page number of page updated on disk
+     */
+    void diskIOHook(long pageNum);
+
+    /**
+     * Called when a write to a page happens.
+     *
+     * This method is never called on a log page. Arguments to the before and after params
+     * must be the same length.
+     *
      * @param transNum transaction performing the write
      * @param pageNum page number of page being written
      * @param pageOffset offset into page where write begins
      * @param before bytes starting at pageOffset before the write
      * @param after bytes starting at pageOffset after the write
-     * @return LSN of newest record
+     * @return LSN of last record written to log
     */
     long logPageWrite(long transNum, long pageNum, short pageOffset, byte[] before,
                       byte[] after);
 
     /**
-     * Logs a partition allocation, and flushes the log.
+     * Called when a new partition is allocated. A log flush is necessary,
+     * since changes are visible on disk immediately after this returns.
+     *
+     * This method should return -1 if the partition is the log partition.
+     *
      * @param transNum transaction requesting the allocation
      * @param partNum partition number of the new partition
-     * @return LSN of record
+     * @return LSN of record or -1 if log partition
      */
     long logAllocPart(long transNum, int partNum);
 
     /**
-     * Logs a partition free, and flushes the log.
+     * Called when a partition is freed. A log flush is necessary,
+     * since changes are visible on disk immediately after this returns.
+     *
+     * This method should return -1 if the partition is the log partition.
+     *
      * @param transNum transaction requesting the partition be freed
      * @param partNum partition number of the partition being freed
-     * @return LSN of record
+     * @return LSN of record or -1 if log partition
      */
     long logFreePart(long transNum, int partNum);
 
     /**
-     * Logs a page allocation, and flushes the log.
+     * Called when a new page is allocated. A log flush is necessary,
+     * since changes are visible on disk immediately after this returns.
+     *
+     * This method should return -1 if the page is in the log partition.
+     *
      * @param transNum transaction requesting the allocation
      * @param pageNum page number of the new page
-     * @return LSN of record
+     * @return LSN of record or -1 if log partition
      */
     long logAllocPage(long transNum, long pageNum);
 
     /**
-     * Logs a page free, and flushes the log.
+     * Called when a page is freed. A log flush is necessary,
+     * since changes are visible on disk immediately after this returns.
+     *
+     * This method should return -1 if the page is in the log partition.
+     *
      * @param transNum transaction requesting the page be freed
      * @param pageNum page number of the page being freed
-     * @return LSN of record
+     * @return LSN of record or -1 if log partition
      */
     long logFreePage(long transNum, long pageNum);
 
     /**
-     * Called on a successful flush.
-     * @param pageNum page number of page that was flushed
-     */
-    void logDiskIO(long pageNum);
-
-    /**
-     * Creates a savepoint for a transaction.
+     * Creates a savepoint for a transaction. Creating a savepoint with
+     * the same name as an existing savepoint for the transaction should
+     * delete the old savepoint.
      * @param transNum transaction to make savepoint for
      * @param name name of savepoint
      */
@@ -123,24 +147,28 @@ public interface RecoveryManager extends AutoCloseable {
     void releaseSavepoint(long transNum, String name);
 
     /**
-     * Rolls back transaction to a savepoint
+     * Rolls back transaction to a savepoint.
      * @param transNum transaction to partially rollback
      * @param name name of savepoint
      */
     void rollbackToSavepoint(long transNum, String name);
 
     /**
-     * Starts the checkpointing process.
+     * Creates a checkpoint.
      */
     void checkpoint();
 
     /**
-     * This method is called whenever the database starts up, aside from the very first run
-     * (when there is no log at all), and performs recovery.
-     * @return task to run to finish restart recovery
+     * Called whenever the database starts up, and performs restart recovery. Recovery is
+     * complete when the Runnable returned is run to termination. New transactions may be
+     * started once this method returns.
+     * @return Runnable to run to finish restart recovery
      */
     Runnable restart();
 
+    /**
+     * Clean up: log flush, checkpointing, etc. Called when the database is closed.
+     */
     @Override
     void close();
 }

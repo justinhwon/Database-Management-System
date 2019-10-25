@@ -67,7 +67,7 @@ public class PageDirectory implements HeapFile {
     // Size of metadata of an empty data page.
     private short emptyPageMetadataSize;
 
-    // lock context of heap file
+    // lock context of heap file/table
     private LockContext lockContext;
 
     // page directory id

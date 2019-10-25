@@ -56,10 +56,12 @@ public class TestOptimization2 {
 
             //t.createTableWithIndices(schema, TABLENAME, Arrays.asList("int"));
         }
+        this.db.waitAllTransactions();
     }
 
     @After
     public void afterEach() {
+        this.db.waitAllTransactions();
         try(Transaction t = this.db.beginTransaction()) {
             t.dropAllTables();
         }
@@ -79,18 +81,16 @@ public class TestOptimization2 {
     @Test
     @Category(PublicTests.class)
     public void test() {
-        Table table = db.getTable(TABLENAME);
-
-        //creates a 100 records int 0 to 99
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        //build the statistics on the table
-        table.buildStatistics(10);
-
         try(Transaction transaction = this.db.beginTransaction()) {
+            //creates a 100 records int 0 to 99
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME, r.getValues());
+            }
+
+            //build the statistics on the table
+            transaction.getTransactionContext().getTable(TABLENAME).buildStatistics(10);
+
             // add a join and a select to the QueryPlan
             QueryPlan query = transaction.query("T", "t1");
             query.join("T", "t2", "t1.int", "t2.int");

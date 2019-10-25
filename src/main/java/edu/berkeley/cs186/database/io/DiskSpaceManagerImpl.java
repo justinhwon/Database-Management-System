@@ -86,9 +86,20 @@ public class DiskSpaceManagerImpl implements DiskSpaceManager {
         // Partition number
         private int partNum;
 
-        private PartInfo(String fileName, int partNum, RecoveryManager recoveryManager) {
+        private PartInfo(int partNum, RecoveryManager recoveryManager) {
             this.masterPage = new int[MAX_HEADER_PAGES];
             this.headerPages = new ArrayList<>();
+            this.partitionLock = new ReentrantLock();
+            this.recoveryManager = recoveryManager;
+            this.partNum = partNum;
+        }
+
+        /**
+         * Opens the OS file and loads master and header pages.
+         * @param fileName name of OS file partition is stored in
+         */
+        private void open(String fileName) {
+            assert (this.fileChannel == null);
             try {
                 this.file = new RandomAccessFile(fileName, "rw");
                 this.fileChannel = this.file.getChannel();
@@ -118,9 +129,6 @@ public class DiskSpaceManagerImpl implements DiskSpaceManager {
             } catch (IOException e) {
                 throw new PageException("Could not open or read file: " + e.getMessage());
             }
-            this.partitionLock = new ReentrantLock();
-            this.recoveryManager = recoveryManager;
-            this.partNum = partNum;
         }
 
         @Override
@@ -220,6 +228,7 @@ public class DiskSpaceManagerImpl implements DiskSpaceManager {
             if (transaction != null) {
                 long vpn = DiskSpaceManager.getVirtualPageNum(partNum, pageNum);
                 recoveryManager.logAllocPage(transaction.getTransNum(), vpn);
+                recoveryManager.diskIOHook(vpn);
             }
 
             this.writeMasterPage();
@@ -252,6 +261,7 @@ public class DiskSpaceManagerImpl implements DiskSpaceManager {
             if (transaction != null) {
                 long vpn = DiskSpaceManager.getVirtualPageNum(partNum, pageNum);
                 recoveryManager.logFreePage(transaction.getTransNum(), vpn);
+                recoveryManager.diskIOHook(vpn);
             }
 
             this.writeMasterPage();
@@ -285,7 +295,7 @@ public class DiskSpaceManagerImpl implements DiskSpaceManager {
             this.fileChannel.force(false);
 
             long vpn = DiskSpaceManager.getVirtualPageNum(partNum, pageNum);
-            recoveryManager.logDiskIO(vpn);
+            recoveryManager.diskIOHook(vpn);
         }
 
         /**
@@ -375,7 +385,10 @@ public class DiskSpaceManagerImpl implements DiskSpaceManager {
                 }
                 int fileNum = Integer.parseInt(f.getName());
                 maxFileNum = Math.max(maxFileNum, fileNum);
-                this.partInfo.put(fileNum, new PartInfo(dbDir + "/" + f.getName(), fileNum, recoveryManager));
+
+                PartInfo pi = new PartInfo(fileNum, recoveryManager);
+                pi.open(dbDir + "/" + f.getName());
+                this.partInfo.put(fileNum, pi);
             }
             this.partNumCounter.set(maxFileNum + 1);
         }
@@ -404,33 +417,52 @@ public class DiskSpaceManagerImpl implements DiskSpaceManager {
     }
 
     private int allocPartHelper(int partNum) {
+        PartInfo pi;
+
         this.managerLock.lock();
         try {
             if (this.partInfo.containsKey(partNum)) {
                 throw new IllegalStateException("partition number " + partNum + " already exists");
             }
 
+            pi = new PartInfo(partNum, recoveryManager);
+            this.partInfo.put(partNum, pi);
+
+            pi.partitionLock.lock();
+        } finally {
+            this.managerLock.unlock();
+        }
+        try {
+            // We must open partition only after logging, but we need to release the
+            // manager lock first, in case the log manager is currently in the process
+            // of allocating a new log page (for another txn's records).
             TransactionContext transaction = TransactionContext.getTransaction();
             if (transaction != null) {
                 recoveryManager.logAllocPart(transaction.getTransNum(), partNum);
             }
 
-            this.partInfo.put(partNum, new PartInfo(dbDir + "/" + partNum, partNum, recoveryManager));
+            pi.open(dbDir + "/" + partNum);
             return partNum;
         } finally {
-            this.managerLock.unlock();
+            pi.partitionLock.unlock();
         }
     }
 
     @Override
     public void freePart(int partNum) {
+        PartInfo pi;
+
         this.managerLock.lock();
         try {
-            PartInfo pi = this.partInfo.remove(partNum);
+            pi = this.partInfo.remove(partNum);
             if (pi == null) {
                 throw new NoSuchElementException("no partition " + partNum);
             }
-
+            pi.partitionLock.lock();
+        } finally {
+            this.managerLock.unlock();
+        }
+        try {
             try {
                 pi.freeDataPages();
                 pi.close();
@@ -448,7 +480,7 @@ public class DiskSpaceManagerImpl implements DiskSpaceManager {
                 throw new PageException("could not delete files for partition " + partNum);
             }
         } finally {
-            this.managerLock.unlock();
+            pi.partitionLock.unlock();
         }
     }
 

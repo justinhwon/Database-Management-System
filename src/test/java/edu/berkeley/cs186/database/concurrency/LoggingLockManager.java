@@ -10,6 +10,7 @@ public class LoggingLockManager extends LockManager {
     public List<String> log = Collections.synchronizedList(new ArrayList<>());
     private boolean logging = false;
     private boolean suppressInternal = true;
+    private boolean suppressStatus = false;
     private Map<Long, LockContext> contexts = new HashMap<>();
     private Map<Long, Boolean> loggingOverride = new ConcurrentHashMap<>();
 
@@ -103,8 +104,16 @@ public class LoggingLockManager extends LockManager {
         suppressInternal = toggle;
     }
 
+    public void suppressStatus(boolean toggle) {
+        suppressStatus = toggle;
+    }
+
     void emit(String s) {
         long tid = Thread.currentThread().getId();
+        if (suppressStatus && !s.startsWith("acquire") && !s.startsWith("promote") &&
+                !s.startsWith("release")) {
+            return;
+        }
         if ((loggingOverride.containsKey(tid) ? loggingOverride.get(tid) : logging)) {
             log.add(s);
         }

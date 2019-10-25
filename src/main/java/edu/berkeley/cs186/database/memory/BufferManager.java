@@ -3,7 +3,7 @@ package edu.berkeley.cs186.database.memory;
 import edu.berkeley.cs186.database.concurrency.LockContext;
 import edu.berkeley.cs186.database.io.DiskSpaceManager;
 
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 public interface BufferManager extends AutoCloseable {
     // We reserve 36 bytes on each page for bookkeeping for recovery
@@ -88,9 +88,11 @@ public interface BufferManager extends AutoCloseable {
 
     /**
      * Calls the passed in method with the page number of every loaded page.
-     * @param process method to consume page numbers
+     * @param process method to consume page numbers. The first parameter is the page number,
+     *                and the second parameter is a boolean indicating whether the page is dirty
+     *                (has an unflushed change).
      */
-    void iterPageNums(Consumer<Long> process);
+    void iterPageNums(BiConsumer<Long, Boolean> process);
 
     /**
      * Get the number of I/Os since the buffer manager was started, excluding anything used in disk

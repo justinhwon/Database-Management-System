@@ -1,17 +1,16 @@
 package edu.berkeley.cs186.database.memory;
 
 import edu.berkeley.cs186.database.TransactionContext;
+import edu.berkeley.cs186.database.common.Pair;
 import edu.berkeley.cs186.database.concurrency.LockContext;
 import edu.berkeley.cs186.database.io.DiskSpaceManager;
 import edu.berkeley.cs186.database.io.PageException;
 import edu.berkeley.cs186.database.recovery.RecoveryManager;
 
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 /**
  * Implementation of a buffer manager, with configurable page replacement policies.
@@ -170,6 +169,9 @@ public class BufferManagerImpl implements BufferManager {
                 if (!this.dirty) {
                     return;
                 }
+                if (!this.logPage) {
+                    recoveryManager.pageFlushHook(this.pageNum, this.getPageLSN());
+                }
                 BufferManagerImpl.this.diskSpaceManager.writePage(pageNum, contents);
                 BufferManagerImpl.this.incrementIOs();
                 this.dirty = false;
@@ -212,7 +214,21 @@ public class BufferManagerImpl implements BufferManager {
                 if (!this.isValid()) {
                     throw new IllegalStateException("writing to invalid buffer frame");
                 }
-                System.arraycopy(buf, 0, this.contents, position + dataOffset(), num);
+                int offset = position + dataOffset();
+                TransactionContext transaction = TransactionContext.getTransaction();
+                if (transaction != null && !logPage) {
+                    List<Pair<Integer, Integer>> changedRanges = getChangedBytes(offset, num, buf);
+                    for (Pair<Integer, Integer> range : changedRanges) {
+                        int start = range.getFirst();
+                        int len = range.getSecond();
+                        byte[] before = Arrays.copyOfRange(contents, start + offset, start + offset + len);
+                        byte[] after = Arrays.copyOfRange(buf, start, start + len);
+                        long pageLSN = recoveryManager.logPageWrite(transaction.getTransNum(), pageNum, position, before,
+                                       after);
+                        this.setPageLSN(pageLSN);
+                    }
+                }
+                System.arraycopy(buf, 0, this.contents, offset, num);
                 this.dirty = true;
                 BufferManagerImpl.this.evictionPolicy.hit(this);
             } finally {
@@ -264,6 +280,37 @@ public class BufferManagerImpl implements BufferManager {
             } else {
                 return "Buffer Frame (freed), next free = " + (~index);
             }
+        }
+
+        /**
+         * Generates (offset, length) pairs for where buf differs from contents. Merges nearby
+         * pairs (where nearby is defined as pairs that have fewer than BufferManager.RESERVED_SPACE
+         * bytes of unmodified data between them).
+         */
+        private List<Pair<Integer, Integer>> getChangedBytes(int offset, int num, byte[] buf) {
+            List<Pair<Integer, Integer>> ranges = new ArrayList<>();
+            int startIndex = -1;
+            int skip = -1;
+            for (int i = 0; i < num; ++i) {
+                if (buf[i] == contents[offset + i] && startIndex >= 0) {
+                    if (skip > BufferManager.RESERVED_SPACE) {
+                        ranges.add(new Pair<>(startIndex, i - startIndex - skip));
+                        startIndex = -1;
+                        skip = -1;
+                    } else {
+                        ++skip;
+                    }
+                } else if (buf[i] != contents[offset + i]) {
+                    if (startIndex < 0) {
+                        startIndex = i;
+                    }
+                    skip = 0;
+                }
+            }
+            if (startIndex >= 0) {
+                ranges.add(new Pair<>(startIndex, num - startIndex - skip));
+            }
+            return ranges;
         }
 
         private void setPageLSN(long pageLSN) {
@@ -381,9 +428,9 @@ public class BufferManagerImpl implements BufferManager {
 
     @Override
     public Frame fetchNewPageFrame(int partNum, boolean logPage) {
+        long pageNum = this.diskSpaceManager.allocPage(partNum);
         this.managerLock.lock();
         try {
-            long pageNum = this.diskSpaceManager.allocPage(partNum);
             return fetchPageFrame(pageNum, logPage);
         } finally {
             this.managerLock.unlock();
@@ -473,12 +520,12 @@ public class BufferManagerImpl implements BufferManager {
     }
 
     @Override
-    public void iterPageNums(Consumer<Long> process) {
+    public void iterPageNums(BiConsumer<Long, Boolean> process) {
         for (Frame frame : frames) {
             frame.frameLock.lock();
             try {
                 if (frame.isValid()) {
-                    process.accept(frame.pageNum);
+                    process.accept(frame.pageNum, frame.dirty);
                 }
             } finally {
                 frame.frameLock.unlock();

@@ -59,10 +59,12 @@ public class TestSortOperator {
         File tempDir = tempFolder.newFolder("sortTest");
         d = new Database(tempDir.getAbsolutePath(), 256);
         d.setWorkMem(3); // B=3
+        d.waitAllTransactions();
     }
 
     @After
     public void cleanup() {
+        d.waitAllTransactions();
         for (Page p : pinnedPages.values()) {
             p.unpin();
         }

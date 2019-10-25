@@ -37,10 +37,10 @@ public class TestSingleAccess {
     @Rule
     public TemporaryFolder tempFolder = new TemporaryFolder();
 
-    // 1 second max per method tested.
+    // 2 second max per method tested.
     @Rule
     public TestRule globalTimeout = new DisableOnDebug(Timeout.millis((long) (
-                1000 * TimeoutScaling.factor)));
+                2000 * TimeoutScaling.factor)));
 
     @Before
     public void beforeEach() throws Exception {
@@ -61,7 +61,7 @@ public class TestSingleAccess {
             t.createIndex(TABLENAME + "I", "int", false);
             t.createTable(schema, TABLENAME + "MI");
             t.createIndex(TABLENAME + "MI", "int", false);
-            t.createIndex(TABLENAME + "MI", "bool", false);
+            t.createIndex(TABLENAME + "MI", "float", false);
 
             t.createTable(TestUtils.createSchemaWithAllTypes("one_"), TABLENAME + "o1");
             t.createTable(TestUtils.createSchemaWithAllTypes("two_"), TABLENAME + "o2");
@@ -93,16 +93,14 @@ public class TestSingleAccess {
     @Test
     @Category(PublicTests.class)
     public void testSequentialScanSelection() {
-        Table table = db.getTable(TABLENAME);
-
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        table.buildStatistics(10);
-
         try(Transaction transaction = this.db.beginTransaction()) {
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME, r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME).buildStatistics(10);
+
             QueryPlan query = transaction.query(TABLENAME, "t1");
 
             QueryOperator op = query.minCostSingleAccess("t1");
@@ -114,16 +112,14 @@ public class TestSingleAccess {
     @Test
     @Category(PublicTests.class)
     public void testSimpleIndexScanSelection() {
-        Table table = db.getTable(TABLENAME + "I");
-
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        table.buildStatistics(10);
-
         try(Transaction transaction = this.db.beginTransaction()) {
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME + "I", r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME + "I").buildStatistics(10);
+
             QueryPlan query = transaction.query(TABLENAME + "I", "t1");
             query.select("int", PredicateOperator.EQUALS, new IntDataBox(9));
 
@@ -136,16 +132,14 @@ public class TestSingleAccess {
     @Test
     @Category(PublicTests.class)
     public void testPushDownSelects() {
-        Table table = db.getTable(TABLENAME);
-
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        table.buildStatistics(10);
-
         try(Transaction transaction = this.db.beginTransaction()) {
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME, r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME).buildStatistics(10);
+
             QueryPlan query = transaction.query(TABLENAME, "t1");
             query.select("int", PredicateOperator.EQUALS, new IntDataBox(9));
 
@@ -159,16 +153,14 @@ public class TestSingleAccess {
     @Test
     @Category(PublicTests.class)
     public void testPushDownMultipleSelects() {
-        Table table = db.getTable(TABLENAME);
-
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        table.buildStatistics(10);
-
         try(Transaction transaction = this.db.beginTransaction()) {
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
+                transaction.insert(TABLENAME, r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME).buildStatistics(10);
+
             QueryPlan query = transaction.query(TABLENAME, "t1");
             query.select("int", PredicateOperator.EQUALS, new IntDataBox(9));
             query.select("bool", PredicateOperator.EQUALS, new BoolDataBox(false));
@@ -184,16 +176,14 @@ public class TestSingleAccess {
     @Test
     @Category(PublicTests.class)
     public void testNoValidIndices() {
-        Table table = db.getTable(TABLENAME + "MI");
-
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        table.buildStatistics(10);
-
         try(Transaction transaction = this.db.beginTransaction()) {
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", i);
+                transaction.insert(TABLENAME + "MI", r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME + "MI").buildStatistics(10);
+
             QueryPlan query = transaction.query(TABLENAME + "MI", "t1");
 
             QueryOperator op = query.minCostSingleAccess("t1");
@@ -205,16 +195,13 @@ public class TestSingleAccess {
     @Test
     @Category(PublicTests.class)
     public void testIndexSelectionAndPushDown() {
-        Table table = db.getTable(TABLENAME + "MI");
-
-        for (int i = 0; i < 2000; ++i) {
-            Record r = createRecordWithAllTypes(false, i, "!", 0.0f);
-            table.addRecord(r.getValues());
-        }
-
-        table.buildStatistics(10);
-
         try(Transaction transaction = this.db.beginTransaction()) {
+            for (int i = 0; i < 2000; ++i) {
+                Record r = createRecordWithAllTypes(false, i, "!", i);
+                transaction.insert(TABLENAME + "MI", r.getValues());
+            }
+
+            transaction.getTransactionContext().getTable(TABLENAME + "MI").buildStatistics(10);
             QueryPlan query = transaction.query(TABLENAME + "MI", "t1");
             query.select("int", PredicateOperator.EQUALS, new IntDataBox(9));
             query.select("bool", PredicateOperator.EQUALS, new BoolDataBox(false));
