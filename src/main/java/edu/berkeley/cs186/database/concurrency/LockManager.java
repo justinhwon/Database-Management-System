@@ -171,14 +171,12 @@ public class LockManager {
      * if a transaction acquired locks in the order: S(A), X(B), promote X(A), the
      * lock on A is considered to have been acquired before the lock on B.
      *
-     * newLockType should not be LockType.SIX, this should be handled by acquireAndRelease
-     *
      * @throws DuplicateLockRequestException if TRANSACTION already has a
      * NEWLOCKTYPE lock on NAME
      * @throws NoLockHeldException if TRANSACTION has no lock on NAME
      * @throws InvalidLockException if the requested lock type is not a promotion. A promotion
      * from lock type A to lock type B is valid if and only if B is substitutable
-     * for A, and B is not equal to A. Also throws this exception if newLockType is LockType.SIX
+     * for A, and B is not equal to A.
      */
     public void promote(TransactionContext transaction, ResourceName name,
                         LockType newLockType)
