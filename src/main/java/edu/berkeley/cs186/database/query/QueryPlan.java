@@ -282,10 +282,17 @@ public class QueryPlan {
         // create a new map for pass i
         Map<Set, QueryOperator> map = new HashMap<>(map1);
 
+
         // run until all of joinTableNames in the sets
         //for (int i =0; i <joinTableNames.size(); i++){
-        while(map.size() != 1){
+        while(map.size() > 1){
             map = minCostJoins(map, map1);
+
+            //print out iterations
+            System.out.println("\n NEW ITERATION: \n");
+            for(QueryOperator value:map.values()){
+                System.out.println(value.toString());
+            }
         }
 
         QueryOperator finalOp = minCostOperator(map);
@@ -294,6 +301,9 @@ public class QueryPlan {
         this.addGroupBy();
         this.addProjects();
 
+
+
+        System.out.println("FINAL QUERY: \n");
         System.out.println(finalOperator.toString());
 
         return this.finalOperator.execute();
@@ -513,11 +523,12 @@ public class QueryPlan {
 
         // for every set in prevMap
         for (Set set: prevMap.keySet()){
-            // get corresponding query
-            QueryOperator currOperator = prevMap.get(set);
 
             // check every joinTableName for a missing table name
             for (int i =0; i <joinTableNames.size(); i++) {
+
+                // get corresponding query
+                QueryOperator currOperator = prevMap.get(set);
 
                 // get joinTableName
                 String joinTableName = joinTableNames.get(i);
@@ -533,17 +544,18 @@ public class QueryPlan {
                 String rightCol = rightPair[1];
 
                 // Try to join if a table is NOT in the set
-                if (!set.contains(joinTableName)){
+                //if (!set.contains(joinTableName)){
 
                     // Case 1. Set contains left table but not right, use pass1Map to
                     //         * fetch the right operator to access the rightTable
-                    if (set.contains(leftTable)){
+                    if (set.contains(leftTable) && !set.contains(rightTable)){
                         // get the right operator from pass1Map
                         Set<String> pass1Key = new HashSet<>();
                         pass1Key.add(joinTableName);
                         QueryOperator rightOperator = pass1Map.get(pass1Key);
 
                         // get the new join query
+                        //QueryOperator newOp = minCostJoinType(currOperator, rightOperator, leftCol, rightCol);
                         QueryOperator newOp = minCostJoinType(currOperator, rightOperator, leftCol, rightCol);
 
                         // make a set that matches the new query
@@ -551,7 +563,6 @@ public class QueryPlan {
                         newSet.addAll(set);
                         newSet.addAll(pass1Key);
 
-
                         // if new query already exists in map, compare cost
                         if(map.containsKey(newSet)){
 
@@ -560,6 +571,7 @@ public class QueryPlan {
 
                             // get current query cost
                             int currCost = map.get(newSet).estimateIOCost();
+
 
                             // if new query cost is less, update map
                             if (newCost < currCost){
@@ -571,18 +583,20 @@ public class QueryPlan {
                             map.put(newSet, newOp);
                         }
 
+
                     }
 
                     // Case 2. Set contains right table but not left, use pass1Map to
                     //         * fetch the right operator to access the leftTable.
-                    else if (set.contains(rightTable)){
+                    else if (set.contains(rightTable) && !set.contains(leftTable)){
                         // get the left operator from pass1Map
                         Set<String> pass1Key = new HashSet<>();
                         pass1Key.add(joinTableName);
                         QueryOperator leftOperator = pass1Map.get(pass1Key);
 
                         // get the new join query
-                        QueryOperator newOp = minCostJoinType(leftOperator, currOperator, leftCol, rightCol);
+                        //QueryOperator newOp = minCostJoinType(leftOperator, currOperator, leftCol, rightCol);
+                        QueryOperator newOp = minCostJoinType(currOperator, leftOperator, rightCol, leftCol);
 
                         // make a set that matches the new query
                         Set<String> newSet = new HashSet<>();
@@ -609,14 +623,17 @@ public class QueryPlan {
                             map.put(newSet, newOp);
                         }
 
+
+
                     }
 
                     // Case 3. Set contains neither or both the left table or right table (continue loop)
-                    else if((!set.contains(leftTable)) && (!set.contains(rightTable))){
+                    else{
                         // do nothing
                     }
 
-                }
+                 // bracket for if(joinTableName not in set)
+                //}
 
 
             }
