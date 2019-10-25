@@ -238,7 +238,45 @@ public class QueryPlan {
         // Get the lowest cost operator from the last pass, add GROUP BY and SELECT
         // operators, and return an iterator on the final operator
 
-        return this.executeNaive(); // TODO(hw3_part2): Replace this!!! Allows you to test intermediate functionality
+        // PASS 1
+
+        // create a new map for pass 1
+        Map<Set, QueryOperator> map1 = new HashMap<>();
+
+        // put a set with each join table name in the map with its cheapest access operator
+        for (String table:joinTableNames){
+            // create a set for a single table
+            Set<String> setTable = new HashSet<>();
+            setTable.add(table);
+            // get corresponding operator
+            QueryOperator tableOperator = minCostSingleAccess(table);
+            // put set(table), operator in map1
+            map1.put(setTable, tableOperator);
+        }
+
+        // PASS 2
+
+        // create a new map for pass i
+        Map<Set, QueryOperator> map = new HashMap<>(map1);
+
+        // run until all of joinTableNames in the sets
+        for (int i =0; i <joinTableNames.size() - 1; i++){
+            map = minCostJoins(map, map1);
+        }
+
+        QueryOperator finalOp = minCostOperator(map);
+
+        this.finalOperator = finalOp;
+        this.addGroupBy();
+        this.addProjects();
+
+        return this.finalOperator.execute();
+
+
+
+
+
+        //return this.executeNaive(); // TODO(hw3_part2): Replace this!!! Allows you to test intermediate functionality
     }
 
     /**
