@@ -483,7 +483,7 @@ public class QueryPlan {
                         QueryOperator newOp = minCostJoinType(currOperator, rightOperator, leftCol, rightCol);
 
                         // make a set that matches the new query
-                        Set<String> newSet = new HashSet<>()
+                        Set<String> newSet = new HashSet<>();
                         newSet.addAll(set);
                         newSet.addAll(pass1Key);
 
@@ -521,7 +521,7 @@ public class QueryPlan {
                         QueryOperator newOp = minCostJoinType(leftOperator, currOperator, leftCol, rightCol);
 
                         // make a set that matches the new query
-                        Set<String> newSet = new HashSet<>()
+                        Set<String> newSet = new HashSet<>();
                         newSet.addAll(set);
                         newSet.addAll(pass1Key);
 
