@@ -14,7 +14,7 @@ public class LockUtil {
      * This method should promote/escalate as needed, but should only grant the least
      * permissive set of locks needed.
      *
-     * lockType is guaranteed to be one of: S, X, IS, IX, NL.
+     * lockType is guaranteed to be one of: S, X, NL.
      *
      * If the current transaction is null (i.e. there is no current transaction), this method should do nothing.
      */
