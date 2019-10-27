@@ -45,7 +45,7 @@ To build and test your code in the container, run:
 mvn clean test -D HW=4
 ```
 
-There should be 72 failures, 1 error, and 78 tests run.
+There should be 70 failures, 1 error, and 76 tests run.
 
 To run just Part 1 tests, run:
 ```bash
@@ -59,7 +59,7 @@ To run just Part 2 tests, run:
 mvn clean test -D HW=4Part2
 ```
 
-There should be 32 failures, 1 error, and 36 tests run. (These numbers may
+There should be 30 failures, 1 error, and 34 tests run. (These numbers may
 change as you work through Part 1).
 
 ## Part 0: Understand the Skeleton Code
