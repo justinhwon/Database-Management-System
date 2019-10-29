@@ -118,8 +118,8 @@ public class LockContext {
     }
 
     /**
-     * Promote TRANSACTION's lock to NEWLOCKTYPE. For promotion to SIX, all S and
-     * IS locks on descendants must be simultaneously released.
+     * Promote TRANSACTION's lock to NEWLOCKTYPE. For promotion to SIX, all S,
+     * IS, and SIX locks on descendants must be simultaneously released.
      *
      * Note: you *must* make any necessary updates to numChildLocks, or
      * else calls to LockContext#saturation will not work properly.

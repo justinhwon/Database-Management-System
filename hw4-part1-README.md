@@ -213,7 +213,7 @@ You will need to implement the following methods of `LockContext`:
   ensuring that all multigranularity constraints are met. For example,
   if the transaction has IS(database) and requests X(table), the appropriate
   exception must be thrown (see comments above method).
-  If a transaction has a SIX lock, then it is redundant for the transaction to have an IS or S on any descendant resource. Therefore, in our implementation, we prohibit acquiring an IS or S lock if an ancestor has SIX, and consider this to be an invalid request.
+  If a transaction has a SIX lock, then it is redundant for the transactior to have an IS/S lock on any descendant resource. Therefore, in our implementation, we prohibit acquiring an IS/S lock if an ancestor has SIX, and consider this to be an invalid request.
 - `release`: this method performs a release via the underlying `LockManager` after
   ensuring that all multigranularity constraints will still be met after release. For example,
   if the transaction has X(table) and attempts to release IX(database), the appropriate
@@ -222,7 +222,14 @@ You will need to implement the following methods of `LockContext`:
   ensuring that all multigranularity constraints are met. For example,
   if the transaction has IS(database) and requests a promotion from S(table) to X(table), the appropriate
   exception must be thrown (see comments above method).
-  In the special case of promotion to SIX, you should simultaneously release all descendant locks of type S/IS, since we disallow having IS/S locks on descendants when a SIX lock is held.
+  In the special case of promotion to SIX, you should simultaneously release all descendant locks of type S/IS, since we disallow having IS/S locks on descendants when a SIX lock is held. You should also disallow promotion to a SIX lock if an ancestor has SIX, because this would be redundant.
+
+  *Note*: this does still allow for SIX locks to be held under a SIX lock, in
+  the case of promoting an ancestor to SIX while a descendant holds SIX. This is
+  redundant, but fixing it is both messy (have to swap all descendant SIX locks
+  with IX locks) and pointless (you still hold a lock on the descendant
+  anyways), so we just leave it as is.
+
 - `escalate`: this method performs lock escalation up to the current level (see below for more
   details). Since interleaving of multiple `LockManager` calls by multiple transactions (running
   on different threads) is allowed, you must make sure to only use one mutating call to the
