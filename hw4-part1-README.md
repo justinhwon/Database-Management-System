@@ -222,7 +222,7 @@ You will need to implement the following methods of `LockContext`:
   ensuring that all multigranularity constraints are met. For example,
   if the transaction has IS(database) and requests a promotion from S(table) to X(table), the appropriate
   exception must be thrown (see comments above method).
-  In the special case of promotion to SIX, you should simultaneously release all descendant locks of type S/IS, since we disallow having IS/S locks on descendants when a SIX lock is held. You should also disallow promotion to a SIX lock if an ancestor has SIX, because this would be redundant.
+  In the special case of promotion to SIX (from IS/IX/S), you should simultaneously release all descendant locks of type S/IS, since we disallow having IS/S locks on descendants when a SIX lock is held. You should also disallow promotion to a SIX lock if an ancestor has SIX, because this would be redundant.
 
   *Note*: this does still allow for SIX locks to be held under a SIX lock, in
   the case of promoting an ancestor to SIX while a descendant holds SIX. This is

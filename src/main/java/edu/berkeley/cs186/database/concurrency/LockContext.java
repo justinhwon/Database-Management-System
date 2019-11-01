@@ -118,7 +118,7 @@ public class LockContext {
     }
 
     /**
-     * Promote TRANSACTION's lock to NEWLOCKTYPE. For promotion to SIX, all S,
+     * Promote TRANSACTION's lock to NEWLOCKTYPE. For promotion to SIX from IS/IX/S, all S,
      * IS, and SIX locks on descendants must be simultaneously released.
      *
      * Note: you *must* make any necessary updates to numChildLocks, or
@@ -128,8 +128,8 @@ public class LockContext {
      * @throws NoLockHeldException if TRANSACTION has no lock
      * @throws InvalidLockException if the requested lock type is not a promotion or promoting
      * would cause the lock manager to enter an invalid state (e.g. IS(parent), X(child)). A promotion
-     * from lock type A to lock type B is valid if and only if B is substitutable
-     * for A, and B is not equal to A.
+     * from lock type A to lock type B is valid if B is substitutable
+     * for A and B is not equal to A, or if B is SIX and A is IS/IX/S, and invalid otherwise.
      * @throws UnsupportedOperationException if context is readonly
      */
     public void promote(TransactionContext transaction, LockType newLockType)
