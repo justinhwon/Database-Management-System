@@ -284,15 +284,9 @@ public class QueryPlan {
 
 
         // run until all of joinTableNames in the sets
-        //for (int i =0; i <joinTableNames.size(); i++){
-        while(map.size() > 1){
+        for (int i =0; i <joinTableNames.size(); i++){
+        //while(map.size() > 1){
             map = minCostJoins(map, map1);
-
-            //print out iterations
-            System.out.println("\n NEW ITERATION: \n");
-            for(QueryOperator value:map.values()){
-                System.out.println(value.toString());
-            }
         }
 
         QueryOperator finalOp = minCostOperator(map);
@@ -301,10 +295,6 @@ public class QueryPlan {
         this.addGroupBy();
         this.addProjects();
 
-
-
-        System.out.println("FINAL QUERY: \n");
-        System.out.println(finalOperator.toString());
 
         return this.finalOperator.execute();
 
@@ -529,9 +519,6 @@ public class QueryPlan {
 
                 // get corresponding query
                 QueryOperator currOperator = prevMap.get(set);
-
-                // get joinTableName
-                String joinTableName = joinTableNames.get(i);
 
                 //Returns a 2-array of table name, column name
                 String [] leftPair = getJoinLeftColumnNameByIndex(i);
