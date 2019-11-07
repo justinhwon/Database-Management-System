@@ -134,8 +134,56 @@ public class LockManager {
         // the entire lock manager when a transaction is blocked. You are also allowed to
         // move the synchronized block elsewhere if you wish.
         synchronized (this) {
-            return;
+
+            // Get the ResourceEntry of the resource
+            ResourceEntry resourceEntry = getResourceEntry(name);
+
+            // List of currently granted locks on the resource.
+            //List<Lock> locks = new ArrayList<>();
+            // Queue for yet-to-be-satisfied lock requests on this resource.
+            //Deque<LockRequest> waitingQueue = new ArrayDeque<>();
+
+            // Get the locks and waiting queue of the resource
+            List<Lock> resourceLocks = resourceEntry.locks;
+            Deque<LockRequest> resourceQueue = resourceEntry.waitingQueue;
+
+
+            // if a lock on resource from same transaction exists, throw error
+            for(Lock lock:resourceLocks){
+                if(lock.transactionNum == transaction.getTransNum()){
+                    throw new DuplicateLockRequestException("a lock on NAME is already held by TRANSACTION");
+                }
+            }
+
+
+            // get list of compatibilities with current locks
+            List<Boolean> compList = new ArrayList<>();
+            for(Lock lock:resourceLocks){
+                compList.add(LockType.compatible(lock.lockType, lockType));
+            }
+
+            // create LockRequest object for the lock request
+            Lock newLock = new Lock(name, lockType, transaction.getTransNum());
+            LockRequest request = new LockRequest(transaction, newLock);
+
+
+            // if new lock not compatible with a current lock, block and add to resource queue
+            if(compList.contains(false)){
+                resourceQueue.addLast(request);
+            }
+            // or there is queue, block transaction and place request at back of resource queue
+            else if(!resourceQueue.isEmpty()){
+                resourceQueue.addLast(request);
+            }
+            // otherwise get the lock and allow transaction to continue
+            else{
+                resourceLocks.add(newLock);
+                return;
+            }
+
         }
+        // block transaction if lock request was put in the queue
+        transaction.block();
     }
 
     /**
@@ -194,7 +242,23 @@ public class LockManager {
     public synchronized LockType getLockType(TransactionContext transaction, ResourceName name) {
         // TODO(hw4_part1): implement
 
-        return LockType.NL;
+        // Get the ResourceEntry of the resource
+        ResourceEntry resourceEntry = getResourceEntry(name);
+
+        // Get the locks of the resource
+        List<Lock> resourceLocks = resourceEntry.locks;
+
+        // Initialize LockType to NL (not found)
+        LockType lockType = LockType.NL;
+
+        // find lock matching the transaction
+        for( Lock lock:resourceLocks ){
+            if (lock.transactionNum == transaction.getTransNum()){
+                lockType = lock.lockType;
+            }
+        }
+
+        return lockType;
     }
 
     /**
