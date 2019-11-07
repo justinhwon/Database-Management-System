@@ -84,7 +84,7 @@ public class LockManager {
         return transactionLocks.get(transaction.getTransNum());
     }
 
-    public void getNextLockInQueue(TransactionContext transaction, ResourceName name,
+    public boolean getNextLockInQueue(TransactionContext transaction, ResourceName name,
                         LockType lockType, Lock newLock) throws DuplicateLockRequestException {
         // Get the ResourceEntry of the resource
         ResourceEntry resourceEntry = getResourceEntry(name);
@@ -122,7 +122,7 @@ public class LockManager {
 
         // if new lock not compatible with a current lock, keep waiting
         if(compList.contains(false)){
-            // do nothing
+            return false;
         }
         // otherwise get the lock and allow transaction to continue
         else{
@@ -132,6 +132,7 @@ public class LockManager {
             resourceQueue.removeFirst();
             // unblock transaction
             transaction.unblock();
+            return true;
         }
 
     }
@@ -244,6 +245,7 @@ public class LockManager {
                 transLocks.add(newLock);
                 return;
             }
+            transaction.prepareBlock();
 
         }
         // block transaction if lock request was put in the queue
@@ -302,17 +304,20 @@ public class LockManager {
             //2. Check out R's waitQueue, handle a LockRequest if possible.
 
             // handle next LockRequest if resourceQueue not empty
-            if (!resourceQueue.isEmpty()){
-            //get next lockRequest
-            LockRequest nextLockReq = resourceQueue.getFirst();
-            // get corresponding transaction, resource name, lock
-            TransactionContext nextTrans = nextLockReq.transaction;
-            Lock nextLock = nextLockReq.lock;
-            ResourceName nextName = nextLock.name;
-            LockType nextLockType = nextLock.lockType;
+            while (!resourceQueue.isEmpty()){
+                //get next lockRequest
+                LockRequest nextLockReq = resourceQueue.getFirst();
+                // get corresponding transaction, resource name, lock
+                TransactionContext nextTrans = nextLockReq.transaction;
+                Lock nextLock = nextLockReq.lock;
+                ResourceName nextName = nextLock.name;
+                LockType nextLockType = nextLock.lockType;
 
-            // get the next lock in the queue
-            getNextLockInQueue(nextTrans, nextName, nextLockType, nextLock);
+                // get the next lock in the queue
+                if(!getNextLockInQueue(nextTrans, nextName, nextLockType, nextLock)){
+                    // if no more to dequeue, break
+                    break;
+                }
             }
 
 
