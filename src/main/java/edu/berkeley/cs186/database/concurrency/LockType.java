@@ -19,8 +19,63 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(hw4_part1): implement
+        int index1;
+        int index2;
 
-        return false;
+        // set a index
+        if (a == NL){
+            index1 = 0;
+        }
+        else if (a == IS){
+            index1 = 1;
+        }
+        else if (a == IX){
+            index1 = 2;
+        }
+        else if (a == S){
+            index1 = 3;
+        }
+        else if (a == SIX){
+            index1 = 4;
+        }
+        else{
+            index1 = 5;
+        }
+
+        // set b index
+        if (b == NL){
+            index2 = 0;
+        }
+        else if (b == IS){
+            index2 = 1;
+        }
+        else if (b == IX){
+            index2 = 2;
+        }
+        else if (b == S){
+            index2 = 3;
+        }
+        else if (b == SIX){
+            index2 = 4;
+        }
+        else{
+            index2 = 5;
+        }
+
+        //compatibility matrix
+        boolean[][] compMatrix = {
+                {true, true, true, true, true, true},
+                {true, true, true, true, true, false},
+                {true, true, true, false, false, false},
+                {true, true, false, true, false, false},
+                {true, true, false, false, false, false},
+                {true, false, false, false, false, false},
+        };
+
+        // get compatibility from matrix
+        boolean compatible = compMatrix[index1][index2];
+
+        return compatible;
     }
 
     /**
@@ -51,8 +106,63 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(hw4_part1): implement
+        int index1;
+        int index2;
 
-        return false;
+        // set a index
+        if (parentLockType == NL){
+            index1 = 0;
+        }
+        else if (parentLockType == IS){
+            index1 = 1;
+        }
+        else if (parentLockType == IX){
+            index1 = 2;
+        }
+        else if (parentLockType == S){
+            index1 = 3;
+        }
+        else if (parentLockType == SIX){
+            index1 = 4;
+        }
+        else{
+            index1 = 5;
+        }
+
+        // set b index
+        if (childLockType == NL){
+            index2 = 0;
+        }
+        else if (childLockType == IS){
+            index2 = 1;
+        }
+        else if (childLockType == IX){
+            index2 = 2;
+        }
+        else if (childLockType == S){
+            index2 = 3;
+        }
+        else if (childLockType == SIX){
+            index2 = 4;
+        }
+        else{
+            index2 = 5;
+        }
+
+        //parent matrix
+        boolean[][] parentMatrix = {
+                {true, false, false, false, false, false},
+                {true, true, false, true, false, false},
+                {true, true, true, true, true, true},
+                {true, false, false, false, false, false},
+                {true, false, true, false, false, true},
+                {true, false, false, false, false, false},
+        };
+
+        // get compatibility from matrix
+        boolean parentPoss = parentMatrix[index1][index2];
+
+        return parentPoss;
     }
 
     /**
@@ -66,8 +176,63 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(hw4_part1): implement
+        int index1;
+        int index2;
 
-        return false;
+        // set a index
+        if (substitute == NL){
+            index1 = 0;
+        }
+        else if (substitute == IS){
+            index1 = 1;
+        }
+        else if (substitute == IX){
+            index1 = 2;
+        }
+        else if (substitute == S){
+            index1 = 3;
+        }
+        else if (substitute == SIX){
+            index1 = 4;
+        }
+        else{
+            index1 = 5;
+        }
+
+        // set b index
+        if (required == NL){
+            index2 = 0;
+        }
+        else if (required == IS){
+            index2 = 1;
+        }
+        else if (required == IX){
+            index2 = 2;
+        }
+        else if (required == S){
+            index2 = 3;
+        }
+        else if (required == SIX){
+            index2 = 4;
+        }
+        else{
+            index2 = 5;
+        }
+
+        //substitute matrix
+        boolean[][] subMatrix = {
+                {true, false, false, false, false, false},
+                {true, true, false, false, false, false},
+                {true, true, true, false, false, false},
+                {true, true, false, true, false, false},
+                {true, true, true, true, true, false},
+                {true, true, true, true, true, true},
+        };
+
+        // get substitutability from matrix
+        boolean subPoss = subMatrix[index1][index2];
+
+        return subPoss;
     }
 
     @Override
