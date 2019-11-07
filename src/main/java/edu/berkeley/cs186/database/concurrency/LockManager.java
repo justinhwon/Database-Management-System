@@ -79,6 +79,63 @@ public class LockManager {
     }
 
     // TODO(hw4_part1): You may add helper methods here if you wish
+    private List<Lock> getTransactionLocks(TransactionContext transaction) {
+        transactionLocks.putIfAbsent(transaction.getTransNum(), new ArrayList<>());
+        return transactionLocks.get(transaction.getTransNum());
+    }
+
+    public void getNextLockInQueue(TransactionContext transaction, ResourceName name,
+                        LockType lockType, Lock newLock) throws DuplicateLockRequestException {
+        // Get the ResourceEntry of the resource
+        ResourceEntry resourceEntry = getResourceEntry(name);
+
+        // List of currently granted locks on the resource.
+        //List<Lock> locks = new ArrayList<>();
+        // Queue for yet-to-be-satisfied lock requests on this resource.
+        //Deque<LockRequest> waitingQueue = new ArrayDeque<>();
+        // transactionLocks is a mapping from transaction number to a list of lock
+        // objects held by that transaction.
+        //private Map<Long, List<Lock>> transactionLocks = new HashMap<>();
+
+        // Get the locks of the transaction
+        List<Lock> transLocks = getTransactionLocks(transaction);
+
+        // Get the locks and waiting queue of the resource
+        List<Lock> resourceLocks = resourceEntry.locks;
+        Deque<LockRequest> resourceQueue = resourceEntry.waitingQueue;
+
+
+        // if a lock on resource from same transaction exists, throw error
+        for(Lock lock:resourceLocks){
+            if(lock.transactionNum == transaction.getTransNum()){
+                throw new DuplicateLockRequestException("a lock on NAME is already held by TRANSACTION");
+            }
+        }
+
+
+        // get list of compatibilities with current locks
+        List<Boolean> compList = new ArrayList<>();
+        for(Lock lock:resourceLocks){
+            compList.add(LockType.compatible(lock.lockType, lockType));
+        }
+
+
+        // if new lock not compatible with a current lock, keep waiting
+        if(compList.contains(false)){
+            // do nothing
+        }
+        // otherwise get the lock and allow transaction to continue
+        else{
+            // add locks to resource and remove from queue
+            resourceLocks.add(newLock);
+            transLocks.add(newLock);
+            resourceQueue.removeFirst();
+            // unblock transaction
+            transaction.unblock();
+        }
+
+    }
+
 
     /**
      * Acquire a LOCKTYPE lock on NAME, for transaction TRANSACTION, and releases all locks
@@ -142,6 +199,12 @@ public class LockManager {
             //List<Lock> locks = new ArrayList<>();
             // Queue for yet-to-be-satisfied lock requests on this resource.
             //Deque<LockRequest> waitingQueue = new ArrayDeque<>();
+            // transactionLocks is a mapping from transaction number to a list of lock
+            // objects held by that transaction.
+            //private Map<Long, List<Lock>> transactionLocks = new HashMap<>();
+
+            // Get the locks of the transaction
+            List<Lock> transLocks = getTransactionLocks(transaction);
 
             // Get the locks and waiting queue of the resource
             List<Lock> resourceLocks = resourceEntry.locks;
@@ -178,6 +241,7 @@ public class LockManager {
             // otherwise get the lock and allow transaction to continue
             else{
                 resourceLocks.add(newLock);
+                transLocks.add(newLock);
                 return;
             }
 
@@ -202,6 +266,57 @@ public class LockManager {
         // TODO(hw4_part1): implement
         // You may modify any part of this method.
         synchronized (this) {
+
+            // Get the ResourceEntry of the resource
+            ResourceEntry resourceEntry = getResourceEntry(name);
+            // Get the locks of the transaction
+            List<Lock> transLocks = getTransactionLocks(transaction);
+
+            // Get the locks and waiting queue of the resource
+            List<Lock> resourceLocks = resourceEntry.locks;
+            Deque<LockRequest> resourceQueue = resourceEntry.waitingQueue;
+
+            // the lock that corresponds to the transaction (initialize to first)
+            Lock currLock = resourceLocks.get(0);
+
+
+            // if no lock on resource from same transaction exists, throw error
+            boolean lockExists = false;
+            for(Lock lock:resourceLocks){
+                if(lock.transactionNum == transaction.getTransNum()){
+                    lockExists = true;
+                    // set currLock to the lock matching the transaction
+                    currLock = lock;
+                }
+            }
+            if (!lockExists){
+                throw new DuplicateLockRequestException("no lock on NAME is held by TRANSACTION");
+            }
+
+            //1. Remove L from the list of locks that T is holding as well as the list of locks taking effect on R.
+            resourceLocks.remove(currLock);
+            transLocks.remove(currLock);
+
+
+
+            //2. Check out R's waitQueue, handle a LockRequest if possible.
+
+            // handle next LockRequest if resourceQueue not empty
+            if (!resourceQueue.isEmpty()){
+            //get next lockRequest
+            LockRequest nextLockReq = resourceQueue.getFirst();
+            // get corresponding transaction, resource name, lock
+            TransactionContext nextTrans = nextLockReq.transaction;
+            Lock nextLock = nextLockReq.lock;
+            ResourceName nextName = nextLock.name;
+            LockType nextLockType = nextLock.lockType;
+
+            // get the next lock in the queue
+            getNextLockInQueue(nextTrans, nextName, nextLockType, nextLock);
+            }
+
+
+
             return;
         }
     }
