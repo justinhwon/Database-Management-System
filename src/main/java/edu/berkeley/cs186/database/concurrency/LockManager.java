@@ -85,7 +85,7 @@ public class LockManager {
     }
 
     public boolean getNextLockInQueue(TransactionContext transaction, ResourceName name,
-                        LockType lockType, Lock newLock) throws DuplicateLockRequestException {
+                        LockType lockType, Lock newLock, LockRequest nextLockReq) throws DuplicateLockRequestException {
         // Get the ResourceEntry of the resource
         ResourceEntry resourceEntry = getResourceEntry(name);
 
@@ -104,11 +104,107 @@ public class LockManager {
         List<Lock> resourceLocks = resourceEntry.locks;
         Deque<LockRequest> resourceQueue = resourceEntry.waitingQueue;
 
-
+        /*
         // if a lock on resource from same transaction exists, throw error
         for(Lock lock:resourceLocks){
             if(lock.transactionNum == transaction.getTransNum()){
                 throw new DuplicateLockRequestException("a lock on NAME is already held by TRANSACTION");
+            }
+        }
+        */
+
+        // do acquire and release if necessary
+        if(!nextLockReq.releasedLocks.isEmpty()){
+            // get list of compatibilities with current locks
+            List<Boolean> compList = new ArrayList<>();
+            for(Lock lock:resourceLocks){
+                // check compatibility with all locks besides the one to be upgraded
+                if (lock.transactionNum != transaction.getTransNum()){
+                    compList.add(LockType.compatible(lockType, lock.lockType));
+                }
+            }
+
+            // if new lock not compatible with a current lock, block and add to front of resource queue
+            if(compList.contains(false)){
+                return false;
+            }
+            // otherwise get the lock, release releaseLocks, and allow transaction to continue
+            else{
+
+                // update lock value if lock already exists
+                boolean oldLockExists = false;
+                Lock oldLock = transLocks.get(0);
+                for(Lock lock:resourceLocks){
+                    if(lock.transactionNum == transaction.getTransNum()){
+                        oldLock = lock;
+                        oldLockExists = true;
+                    }
+                }
+
+                if (oldLockExists){
+                    int resLockIndex = resourceLocks.indexOf(oldLock);
+                    resourceLocks.set(resLockIndex, newLock);
+                    int transLockIndex = transLocks.indexOf(oldLock);
+                    transLocks.set(transLockIndex, newLock);
+                }
+                else{
+                    resourceLocks.add(newLock);
+                    transLocks.add(newLock);
+                }
+
+
+                // remove the necessary locks
+                for (Lock toBeReleased:nextLockReq.releasedLocks){
+                    ResourceName nameToRelease = toBeReleased.name;
+                    release(transaction, nameToRelease);
+                    // remove locks from queue of resources
+                    //getResourceEntry(toBeReleased.name).waitingQueue.remove(toBeReleased);
+                }
+
+                // check next queue
+
+                return true;
+            }
+
+        }
+
+        boolean isPromote = false;
+        for(Lock lock:resourceLocks){
+            if(lock.transactionNum == transaction.getTransNum()){
+                isPromote = true;
+            }
+        }
+
+        if(isPromote){
+            // get the lock to be promoted
+            Lock oldLock = transLocks.get(0);
+            for(Lock lock:resourceLocks){
+                if(lock.transactionNum == transaction.getTransNum()){
+                    oldLock = lock;
+                }
+            }
+
+            // get list of compatibilities with current locks
+            List<Boolean> compList = new ArrayList<>();
+            for(Lock lock:resourceLocks){
+                // check compatibility with all locks besides the one to be upgraded
+                if (lock.transactionNum != transaction.getTransNum()){
+                    compList.add(LockType.compatible(lockType, lock.lockType));
+                }
+            }
+
+            // if new lock not compatible with a current lock, do nothing
+            if(compList.contains(false)){
+                return false;
+            }
+            // otherwise upgrade the lock and allow transaction to continue
+            else{
+                int resLockIndex = resourceLocks.indexOf(oldLock);
+                resourceLocks.set(resLockIndex, newLock);
+                int transLockIndex = transLocks.indexOf(oldLock);
+                transLocks.set(transLockIndex, newLock);
+                transaction.unblock();
+                return true;
             }
         }
 
@@ -167,9 +263,107 @@ public class LockManager {
         // you will have to write some code outside the synchronized block to avoid locking up
         // the entire lock manager when a transaction is blocked. You are also allowed to
         // move the synchronized block elsewhere if you wish.
-        synchronized (this) {
+
+        //case where releaseLocks is empty
+        if (releaseLocks.isEmpty()){
+            acquire(transaction, name, lockType);
             return;
         }
+
+
+        synchronized (this) {
+            // Get the ResourceEntry of the resource
+            ResourceEntry resourceEntry = getResourceEntry(name);
+
+            // Get the locks of the transaction
+            List<Lock> transLocks = getTransactionLocks(transaction);
+
+            // Get the locks and waiting queue of the resource
+            List<Lock> resourceLocks = resourceEntry.locks;
+            Deque<LockRequest> resourceQueue = resourceEntry.waitingQueue;
+
+
+            // if a lock on resource from same transaction exists and isn't being release, throw error
+            for(Lock lock:resourceLocks){
+                if(lock.transactionNum == transaction.getTransNum() && !releaseLocks.contains(lock.name)){
+                    throw new DuplicateLockRequestException("a lock on NAME is already held by TRANSACTION");
+                }
+            }
+
+
+            // get list of compatibilities with current locks
+            List<Boolean> compList = new ArrayList<>();
+            for(Lock lock:resourceLocks){
+                // check compatibility with all locks besides the one to be upgraded
+                if (lock.transactionNum != transaction.getTransNum()){
+                    compList.add(LockType.compatible(lockType, lock.lockType));
+                }
+            }
+
+            // convert list of resources to list of locks matching the transaction
+            List<Lock> releaseList = new ArrayList<>();
+            for(ResourceName rname:releaseLocks){
+                List<Lock> resLocks = getResourceEntry(rname).locks;
+                for(Lock rlock:resLocks){
+                    if (rlock.transactionNum == transaction.getTransNum()){
+                        releaseList.add(rlock);
+                    }
+                }
+            }
+
+            // throw error if no lock on a name in RELEASELOCKS is held by TRANSACTION
+            if(releaseList.isEmpty()){
+                throw new NoLockHeldException("no lock on a name in RELEASELOCKS is held by TRANSACTION");
+            }
+
+            // create LockRequest object for the lock request
+            Lock newLock = new Lock(name, lockType, transaction.getTransNum());
+            LockRequest request = new LockRequest(transaction, newLock, releaseList);
+
+            // if new lock not compatible with a current lock, block and add to front of resource queue
+            if(compList.contains(false)){
+                resourceQueue.addFirst(request);
+            }
+            // otherwise get the lock, release releaseLocks, and allow transaction to continue
+            else{
+
+                // update lock value if lock already exists
+                boolean oldLockExists = false;
+                Lock oldLock = transLocks.get(0);
+                for(Lock lock:resourceLocks){
+                    if(lock.transactionNum == transaction.getTransNum()){
+                        oldLock = lock;
+                        oldLockExists = true;
+                    }
+                }
+
+                if (oldLockExists){
+                    int resLockIndex = resourceLocks.indexOf(oldLock);
+                    resourceLocks.set(resLockIndex, newLock);
+                    int transLockIndex = transLocks.indexOf(oldLock);
+                    transLocks.set(transLockIndex, newLock);
+                }
+                else{
+                    resourceLocks.add(newLock);
+                    transLocks.add(newLock);
+                }
+
+
+                // remove the necessary locks
+                for (ResourceName toBeReleased:releaseLocks){
+                    release(transaction, toBeReleased);
+                    // remove locks from queue of resources
+                    //getResourceEntry(toBeReleased.name).waitingQueue.remove(toBeReleased);
+                }
+
+                // check next queue
+
+                return;
+            }
+            transaction.prepareBlock();
+        }
+
+        transaction.block();
     }
 
     /**
@@ -314,7 +508,7 @@ public class LockManager {
                 LockType nextLockType = nextLock.lockType;
 
                 // get the next lock in the queue
-                if(!getNextLockInQueue(nextTrans, nextName, nextLockType, nextLock)){
+                if(!getNextLockInQueue(nextTrans, nextName, nextLockType, nextLock, nextLockReq)){
                     // if no more to dequeue, break
                     break;
                 }
@@ -352,8 +546,76 @@ public class LockManager {
         // TODO(hw4_part1): implement
         // You may modify any part of this method.
         synchronized (this) {
-            return;
+            // Get the ResourceEntry of the resource
+            ResourceEntry resourceEntry = getResourceEntry(name);
+
+            // Get the locks of the transaction
+            List<Lock> transLocks = getTransactionLocks(transaction);
+
+            // Get the locks and waiting queue of the resource
+            List<Lock> resourceLocks = resourceEntry.locks;
+            Deque<LockRequest> resourceQueue = resourceEntry.waitingQueue;
+
+            // if TRANSACTION already has a NEWLOCKTYPE lock on NAME, throw exception
+            for (Lock lock:transLocks){
+                if (lock.name == name && lock.lockType == newLockType){
+                    throw new DuplicateLockRequestException("TRANSACTION already has a NEWLOCKTYPE lock on NAME");
+                }
+            }
+
+            //if TRANSACTION has no lock on NAME, throw exception
+            boolean hasLockOnName = false;
+            for (Lock lock:transLocks){
+                if (lock.name == name){
+                    hasLockOnName = true;
+                }
+            }
+            if (!hasLockOnName){
+                throw new NoLockHeldException("TRANSACTION has no lock on NAME");
+            }
+
+            // get the lock to be promoted
+            Lock oldLock = transLocks.get(0);
+            for(Lock lock:resourceLocks){
+                if(lock.transactionNum == transaction.getTransNum()){
+                    oldLock = lock;
+                }
+            }
+
+            //if the requested lock type is not a promotion, throw exception
+            if (!LockType.substitutable(newLockType, oldLock.lockType)){
+                throw new InvalidLockException("the requested lock type is not a promotion");
+            }
+
+
+            // get list of compatibilities with current locks
+            List<Boolean> compList = new ArrayList<>();
+            for(Lock lock:resourceLocks){
+                // check compatibility with all locks besides the one to be upgraded
+                if (lock.transactionNum != transaction.getTransNum()){
+                    compList.add(LockType.compatible(newLockType, lock.lockType));
+                }
+            }
+
+            // create LockRequest object for the lock request
+            Lock newLock = new Lock(name, newLockType, transaction.getTransNum());
+            LockRequest request = new LockRequest(transaction, newLock);
+
+            // if new lock not compatible with a current lock, block and add to resource queue
+            if(compList.contains(false)){
+                resourceQueue.addFirst(request);
+            }
+            // otherwise upgrade the lock and allow transaction to continue
+            else{
+                int resLockIndex = resourceLocks.indexOf(oldLock);
+                resourceLocks.set(resLockIndex, newLock);
+                int transLockIndex = transLocks.indexOf(oldLock);
+                transLocks.set(transLockIndex, newLock);
+                return;
+            }
+            transaction.prepareBlock();
         }
+        transaction.block();
     }
 
     /**
