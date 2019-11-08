@@ -133,7 +133,7 @@ public class LockManager {
 
                 // update lock value if lock already exists
                 boolean oldLockExists = false;
-                Lock oldLock = transLocks.get(0);
+                Lock oldLock = null;
                 for(Lock lock:resourceLocks){
                     if(lock.transactionNum == transaction.getTransNum()){
                         oldLock = lock;
@@ -177,7 +177,7 @@ public class LockManager {
 
         if(isPromote){
             // get the lock to be promoted
-            Lock oldLock = transLocks.get(0);
+            Lock oldLock = null;
             for(Lock lock:resourceLocks){
                 if(lock.transactionNum == transaction.getTransNum()){
                     oldLock = lock;
@@ -329,7 +329,7 @@ public class LockManager {
 
                 // update lock value if lock already exists
                 boolean oldLockExists = false;
-                Lock oldLock = transLocks.get(0);
+                Lock oldLock = null;
                 for(Lock lock:resourceLocks){
                     if(lock.transactionNum == transaction.getTransNum()){
                         oldLock = lock;
@@ -473,7 +473,7 @@ public class LockManager {
             Deque<LockRequest> resourceQueue = resourceEntry.waitingQueue;
 
             // the lock that corresponds to the transaction (initialize to first)
-            Lock currLock = resourceLocks.get(0);
+            Lock currLock = null;
 
 
             // if no lock on resource from same transaction exists, throw error
@@ -486,7 +486,7 @@ public class LockManager {
                 }
             }
             if (!lockExists){
-                throw new DuplicateLockRequestException("no lock on NAME is held by TRANSACTION");
+                throw new NoLockHeldException("no lock on NAME is held by TRANSACTION");
             }
 
             //1. Remove L from the list of locks that T is holding as well as the list of locks taking effect on R.
@@ -575,7 +575,7 @@ public class LockManager {
             }
 
             // get the lock to be promoted
-            Lock oldLock = transLocks.get(0);
+            Lock oldLock = null;
             for(Lock lock:resourceLocks){
                 if(lock.transactionNum == transaction.getTransNum()){
                     oldLock = lock;
