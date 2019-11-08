@@ -156,12 +156,18 @@ public class LockManager {
                 // remove the necessary locks
                 for (Lock toBeReleased:nextLockReq.releasedLocks){
                     ResourceName nameToRelease = toBeReleased.name;
-                    release(transaction, nameToRelease);
+                    if(nameToRelease != name) {
+                        release(transaction, nameToRelease);
+                    }
                     // remove locks from queue of resources
                     //getResourceEntry(toBeReleased.name).waitingQueue.remove(toBeReleased);
                 }
 
-                // check next queue
+                resourceQueue.removeFirst();
+                // unblock the transaction
+                transaction.unblock();
+
+
 
                 return true;
             }
@@ -203,6 +209,7 @@ public class LockManager {
                 resourceLocks.set(resLockIndex, newLock);
                 int transLockIndex = transLocks.indexOf(oldLock);
                 transLocks.set(transLockIndex, newLock);
+                resourceQueue.removeFirst();
                 transaction.unblock();
                 return true;
             }
@@ -351,7 +358,10 @@ public class LockManager {
 
                 // remove the necessary locks
                 for (ResourceName toBeReleased:releaseLocks){
-                    release(transaction, toBeReleased);
+                    if(toBeReleased != name){
+                        release(transaction, toBeReleased);
+                    }
+
                     // remove locks from queue of resources
                     //getResourceEntry(toBeReleased.name).waitingQueue.remove(toBeReleased);
                 }
