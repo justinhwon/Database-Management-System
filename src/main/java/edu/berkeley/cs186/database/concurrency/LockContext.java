@@ -96,6 +96,27 @@ public class LockContext {
     throws InvalidLockException, DuplicateLockRequestException {
         // TODO(hw4_part1): implement
 
+        // throw exception if readonly
+        if (readonly){
+            throw new UnsupportedOperationException();
+        }
+
+
+        // throw exception if multi-granularity context invalid
+        if(parent!=null){
+            LockType expLockType = lockType;
+            LockType parentLockType = parent.getEffectiveLockType(transaction);
+            if(!LockType.canBeParentLock(parentLockType, expLockType)){
+                throw new InvalidLockException("the request is invalid");
+            }
+        }
+
+
+
+        // acquire lock
+        lockman.acquire(transaction, name, lockType);
+
+
         return;
     }
 
@@ -113,6 +134,30 @@ public class LockContext {
     public void release(TransactionContext transaction)
     throws NoLockHeldException, InvalidLockException {
         // TODO(hw4_part1): implement
+
+        // throw exception if readonly
+        if (readonly){
+            throw new UnsupportedOperationException();
+        }
+
+        // throw exception if multi-granularity context invalid
+        // e.g. parent IS, child S but parent lock releases
+
+        // COMPLETE GUESSING NEED TOTAL REVISION
+        // COMPLETE GUESSING NEED TOTAL REVISION
+        // COMPLETE GUESSING NEED TOTAL REVISION
+        List<Lock> locks = lockman.getLocks(transaction);
+        for(Lock lock:locks){
+            if(lock.lockType == LockType.S && getExplicitLockType(transaction) == LockType.IS){
+                throw new InvalidLockException("the lock cannot be released due to multigranularity locking constraints)");
+            }
+        }
+        // COMPLETE GUESSING NEED TOTAL REVISION
+        // COMPLETE GUESSING NEED TOTAL REVISION
+        // COMPLETE GUESSING NEED TOTAL REVISION
+
+
+        lockman.release(transaction, name);
 
         return;
     }
@@ -135,6 +180,13 @@ public class LockContext {
     public void promote(TransactionContext transaction, LockType newLockType)
     throws DuplicateLockRequestException, NoLockHeldException, InvalidLockException {
         // TODO(hw4_part1): implement
+
+        // throw exception if readonly
+        if (readonly){
+            throw new UnsupportedOperationException();
+        }
+
+        lockman.promote(transaction, name, newLockType);
 
         return;
     }
@@ -163,6 +215,32 @@ public class LockContext {
     public void escalate(TransactionContext transaction) throws NoLockHeldException {
         // TODO(hw4_part1): implement
 
+        // throw exception if readonly
+        if (readonly){
+            throw new UnsupportedOperationException();
+        }
+
+        // COMPLETE GUESSING NEED TOTAL REVISION
+        // COMPLETE GUESSING NEED TOTAL REVISION
+        // COMPLETE GUESSING NEED TOTAL REVISION
+        if (getEffectiveLockType(transaction) == LockType.NL){
+            throw new NoLockHeldException("if TRANSACTION has no lock at this level");
+        }
+
+        List<Lock> locks = lockman.getLocks(transaction);
+        for(Lock lock:locks){
+            if(lock.lockType == LockType.IS){
+                promote(transaction, LockType.S);
+            }
+            if(lock.lockType == LockType.IX){
+                promote(transaction, LockType.X);
+            }
+        }
+        // COMPLETE GUESSING NEED TOTAL REVISION
+        // COMPLETE GUESSING NEED TOTAL REVISION
+        // COMPLETE GUESSING NEED TOTAL REVISION
+
+
         return;
     }
 
@@ -176,7 +254,41 @@ public class LockContext {
             return LockType.NL;
         }
         // TODO(hw4_part1): implement
-        return LockType.NL;
+        // If NL check for an S, SIX, or X ancestor
+        if(getExplicitLockType(transaction) == LockType.NL){
+            LockContext currParent = parent;
+            while(currParent != null){
+
+                // if parent is S, SIX, or X lock
+                if (currParent.getExplicitLockType(transaction) == LockType.S || currParent.getExplicitLockType(transaction) == LockType.SIX){
+                    return LockType.S;
+                }
+                else if (currParent.getExplicitLockType(transaction) == LockType.X){
+                    return LockType.X;
+                }
+
+                //check next parent
+                currParent = currParent.parent;
+            }
+        }
+
+        // If IX check for an SIX ancestor
+        if(getExplicitLockType(transaction) == LockType.IX){
+            LockContext currParent = parent;
+            while(currParent != null){
+
+                // if parent is S, SIX, or X lock
+                if (currParent.getExplicitLockType(transaction) == LockType.SIX){
+                    return LockType.S;
+                }
+
+                //check next parent
+                currParent = currParent.parent;
+            }
+        }
+
+        // else return the explicit type
+        return getExplicitLockType(transaction);
     }
 
     /**
@@ -187,7 +299,9 @@ public class LockContext {
             return LockType.NL;
         }
         // TODO(hw4_part1): implement
-        return LockType.NL;
+        LockType explicitLockType = lockman.getLockType(transaction, name);
+
+        return explicitLockType;
     }
 
     /**
