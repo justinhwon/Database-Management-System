@@ -290,7 +290,7 @@ public class LockManager {
             Deque<LockRequest> resourceQueue = resourceEntry.waitingQueue;
 
 
-            // if a lock on resource from same transaction exists and isn't being release, throw error
+            // if a lock on resource from same transaction exists and isn't being released, throw error
             for(Lock lock:resourceLocks){
                 if(lock.transactionNum == transaction.getTransNum() && !releaseLocks.contains(lock.name)){
                     throw new DuplicateLockRequestException("a lock on NAME is already held by TRANSACTION");
