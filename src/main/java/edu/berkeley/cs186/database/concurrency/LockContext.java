@@ -116,17 +116,32 @@ public class LockContext {
         // acquire lock
         lockman.acquire(transaction, name, lockType);
 
+
+        // increase parent's numChildLocks
+        if (parentContext() != null){
+            parentContext().numChildLocks.putIfAbsent(transaction.getTransNum(), 0);
+            int numChildren = parentContext().numChildLocks.get(transaction.getTransNum());
+            parentContext().numChildLocks.put(transaction.getTransNum(), numChildren + 1);
+        }
+
+
+
+
+        /*
         // get previous numchildlocks
         int prevNumChild = -1;
         //int prevNumChild = numChildLocks.get(transaction.getTransNum());
-        if( numChildLocks.get(transaction.getTransNum()) != null){
-            prevNumChild = numChildLocks.get(transaction.getTransNum());
+        if( parentContext().numChildLocks.get(transaction.getTransNum()) != null){
+            prevNumChild = parentContext().numChildLocks.get(transaction.getTransNum());
         }
 
         //update numchildlocks
         if (prevNumChild != -1){
-            numChildLocks.put(transaction.getTransNum(), prevNumChild + 1);
+            parentContext().numChildLocks.put(transaction.getTransNum(), prevNumChild + 1);
         }
+
+         */
+
 
 
 
@@ -165,6 +180,13 @@ public class LockContext {
         // release the lock
         lockman.release(transaction, name);
 
+        // decrease parent's numChildLocks
+        if (parentContext() != null){
+            int numChildren = parentContext().numChildLocks.get(transaction.getTransNum());
+            parentContext().numChildLocks.put(transaction.getTransNum(), numChildren - 1);
+        }
+
+        /*
         // get previous numchildlocks
         int prevNumChild = -1;
         //int prevNumChild = numChildLocks.get(transaction.getTransNum());
@@ -176,6 +198,8 @@ public class LockContext {
         if (prevNumChild != -1){
             numChildLocks.put(transaction.getTransNum(), prevNumChild - 1);
         }
+
+         */
 
         return;
     }
@@ -229,6 +253,21 @@ public class LockContext {
             // promote to SIX and release locks
             lockman.acquireAndRelease(transaction, getResourceName(), newLockType, releaseLocks);
 
+
+            // current lock doesn't get removed so don't update parent
+            releaseLocks.remove(getResourceName());
+
+            // update number of children for parents of removed locks
+            for (ResourceName removedLock: releaseLocks){
+                LockContext lockContext = fromResourceName(lockman, removedLock);
+                int numChildren = lockContext.parentContext().numChildLocks.get(transaction.getTransNum());
+                lockContext.parentContext().numChildLocks.put(transaction.getTransNum(), numChildren - 1);
+            }
+
+
+
+            /*
+
             // get previous numchildlocks
             int prevNumChild = -1;
             //int prevNumChild = numChildLocks.get(transaction.getTransNum());
@@ -240,6 +279,8 @@ public class LockContext {
             if (prevNumChild != -1){
                 numChildLocks.put(transaction.getTransNum(), prevNumChild - releaseLocks.size() + 1);
             }
+
+             */
         }
         // otherwise promote normally
         else{
@@ -328,6 +369,19 @@ public class LockContext {
         // promote to newLockType and release locks
         lockman.acquireAndRelease(transaction, getResourceName(), newLockType, descendantNames);
 
+        // current lock doesn't get removed so don't update parent
+        descendantNames.remove(getResourceName());
+
+        // update number of children for parents of removed locks
+        for (ResourceName removedLock: descendantNames){
+            LockContext lockContext = fromResourceName(lockman, removedLock);
+            int numChildren = lockContext.parentContext().numChildLocks.get(transaction.getTransNum());
+            lockContext.parentContext().numChildLocks.put(transaction.getTransNum(), numChildren - 1);
+        }
+
+
+        /*
+
         // get previous numchildlocks
         int prevNumChild = -1;
         //int prevNumChild = numChildLocks.get(transaction.getTransNum());
@@ -340,30 +394,7 @@ public class LockContext {
             numChildLocks.put(transaction.getTransNum(), prevNumChild - descendantNames.size() + 1);
         }
 
-        // COMPLETE GUESSING NEED TOTAL REVISION
-        // COMPLETE GUESSING NEED TOTAL REVISION
-        // COMPLETE GUESSING NEED TOTAL REVISION
-        /*
-        if (getEffectiveLockType(transaction) == LockType.NL){
-            throw new NoLockHeldException("if TRANSACTION has no lock at this level");
-        }
-
-        List<Lock> locks = lockman.getLocks(transaction);
-        for(Lock lock:locks){
-            if(lock.lockType == LockType.IS){
-                promote(transaction, LockType.S);
-            }
-            if(lock.lockType == LockType.IX){
-                promote(transaction, LockType.X);
-            }
-        }
-
-         */
-        // COMPLETE GUESSING NEED TOTAL REVISION
-        // COMPLETE GUESSING NEED TOTAL REVISION
-        // COMPLETE GUESSING NEED TOTAL REVISION
-
-
+        */
 
         return;
     }
