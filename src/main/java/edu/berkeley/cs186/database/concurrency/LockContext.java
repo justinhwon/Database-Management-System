@@ -103,9 +103,9 @@ public class LockContext {
 
 
         // throw exception if multi-granularity context invalid
-        if(parent!=null){
+        if(parentContext()!=null){
             LockType expLockType = lockType;
-            LockType parentLockType = parent.getEffectiveLockType(transaction);
+            LockType parentLockType = parentContext().getEffectiveLockType(transaction);
             if(!LockType.canBeParentLock(parentLockType, expLockType)){
                 throw new InvalidLockException("the request is invalid");
             }
@@ -115,6 +115,19 @@ public class LockContext {
 
         // acquire lock
         lockman.acquire(transaction, name, lockType);
+
+        // get previous numchildlocks
+        int prevNumChild = -1;
+        //int prevNumChild = numChildLocks.get(transaction.getTransNum());
+        if( numChildLocks.get(transaction.getTransNum()) != null){
+            prevNumChild = numChildLocks.get(transaction.getTransNum());
+        }
+
+        //update numchildlocks
+        if (prevNumChild != -1){
+            numChildLocks.put(transaction.getTransNum(), prevNumChild + 1);
+        }
+
 
 
         return;
@@ -140,24 +153,29 @@ public class LockContext {
             throw new UnsupportedOperationException();
         }
 
-        // throw exception if multi-granularity context invalid
-        // e.g. parent IS, child S but parent lock releases
 
-        // COMPLETE GUESSING NEED TOTAL REVISION
-        // COMPLETE GUESSING NEED TOTAL REVISION
-        // COMPLETE GUESSING NEED TOTAL REVISION
+        // if there are descendant locks, cannot release the lock
         List<Lock> locks = lockman.getLocks(transaction);
         for(Lock lock:locks){
-            if(lock.lockType == LockType.S && getExplicitLockType(transaction) == LockType.IS){
+            if(lock.name.isDescendantOf(getResourceName())){
                 throw new InvalidLockException("the lock cannot be released due to multigranularity locking constraints)");
             }
         }
-        // COMPLETE GUESSING NEED TOTAL REVISION
-        // COMPLETE GUESSING NEED TOTAL REVISION
-        // COMPLETE GUESSING NEED TOTAL REVISION
 
-
+        // release the lock
         lockman.release(transaction, name);
+
+        // get previous numchildlocks
+        int prevNumChild = -1;
+        //int prevNumChild = numChildLocks.get(transaction.getTransNum());
+        if( numChildLocks.get(transaction.getTransNum()) != null){
+            prevNumChild = numChildLocks.get(transaction.getTransNum());
+        }
+
+        //update numchildlocks
+        if (prevNumChild != -1){
+            numChildLocks.put(transaction.getTransNum(), prevNumChild - 1);
+        }
 
         return;
     }
@@ -186,7 +204,48 @@ public class LockContext {
             throw new UnsupportedOperationException();
         }
 
-        lockman.promote(transaction, name, newLockType);
+
+        // check if current lock is IS/IX/S
+        boolean sixSpecialCase = false;
+        if(getExplicitLockType(transaction) == LockType.IS || getExplicitLockType(transaction) == LockType.IX || getExplicitLockType(transaction) == LockType.S){
+            sixSpecialCase = true;
+
+        }
+
+        // For promotion to SIX from IS/IX/S, all S, IS, and SIX locks on descendants must be simultaneously released.
+        if(newLockType == LockType.SIX && sixSpecialCase){
+            // get list of descendant resources
+            List<ResourceName> releaseLocks = new ArrayList<>();
+            List<Lock> locks = lockman.getLocks(transaction);
+            for(Lock lock:locks){
+                if(lock.name.isDescendantOf(getResourceName())){
+                    releaseLocks.add(lock.name);
+                }
+            }
+
+            // add the current lock to releaseLocks to make sure it also gets released
+            releaseLocks.add(getResourceName());
+
+            // promote to SIX and release locks
+            lockman.acquireAndRelease(transaction, getResourceName(), newLockType, releaseLocks);
+
+            // get previous numchildlocks
+            int prevNumChild = -1;
+            //int prevNumChild = numChildLocks.get(transaction.getTransNum());
+            if( numChildLocks.get(transaction.getTransNum()) != null){
+                prevNumChild = numChildLocks.get(transaction.getTransNum());
+            }
+
+            //update numchildlocks
+            if (prevNumChild != -1){
+                numChildLocks.put(transaction.getTransNum(), prevNumChild - releaseLocks.size() + 1);
+            }
+        }
+        // otherwise promote normally
+        else{
+            lockman.promote(transaction, name, newLockType);
+        }
+
 
         return;
     }
@@ -220,9 +279,71 @@ public class LockContext {
             throw new UnsupportedOperationException();
         }
 
+        //if current lock is already s or x, do nothing
+        if (getEffectiveLockType(transaction) == LockType.S){
+            return;
+        }
+        if (getEffectiveLockType(transaction) == LockType.X){
+            return;
+        }
+
+
+        // cannot escalate if no lock
+        if (getEffectiveLockType(transaction) == LockType.NL){
+            throw new NoLockHeldException("if TRANSACTION has no lock at this level");
+        }
+
+        // get list of descendant locks and names
+        List<Lock> descendantLocks = new ArrayList<>();
+        List<ResourceName> descendantNames = new ArrayList<>();
+        List<Lock> locks = lockman.getLocks(transaction);
+        for(Lock lock:locks){
+            if(lock.name.isDescendantOf(getResourceName())){
+                descendantLocks.add(lock);
+                descendantNames.add(lock.name);
+            }
+        }
+
+        // add current lock to descendantLocks
+        List<Lock> transLocks = lockman.getLocks(transaction);
+        for (Lock tlock:transLocks){
+            if(tlock.name == getResourceName()){
+                descendantLocks.add(tlock);
+            }
+        }
+        // add the current lock to descendantNames to make sure it also gets released
+        descendantNames.add(getResourceName());
+
+
+        // default to S lock, if S does not work then escalate to X instead
+        LockType newLockType = LockType.S;
+
+        // If S does not work for a descendant or current lock, escalate to X
+        for(Lock dlock:descendantLocks){
+            if (!LockType.substitutable(LockType.S, dlock.lockType)){
+                newLockType = LockType.X;
+            }
+        }
+
+        // promote to newLockType and release locks
+        lockman.acquireAndRelease(transaction, getResourceName(), newLockType, descendantNames);
+
+        // get previous numchildlocks
+        int prevNumChild = -1;
+        //int prevNumChild = numChildLocks.get(transaction.getTransNum());
+        if( numChildLocks.get(transaction.getTransNum()) != null){
+            prevNumChild = numChildLocks.get(transaction.getTransNum());
+        }
+
+        //update numchildlocks
+        if (prevNumChild != -1){
+            numChildLocks.put(transaction.getTransNum(), prevNumChild - descendantNames.size() + 1);
+        }
+
         // COMPLETE GUESSING NEED TOTAL REVISION
         // COMPLETE GUESSING NEED TOTAL REVISION
         // COMPLETE GUESSING NEED TOTAL REVISION
+        /*
         if (getEffectiveLockType(transaction) == LockType.NL){
             throw new NoLockHeldException("if TRANSACTION has no lock at this level");
         }
@@ -236,9 +357,12 @@ public class LockContext {
                 promote(transaction, LockType.X);
             }
         }
+
+         */
         // COMPLETE GUESSING NEED TOTAL REVISION
         // COMPLETE GUESSING NEED TOTAL REVISION
         // COMPLETE GUESSING NEED TOTAL REVISION
+
 
 
         return;
@@ -256,7 +380,7 @@ public class LockContext {
         // TODO(hw4_part1): implement
         // If NL check for an S, SIX, or X ancestor
         if(getExplicitLockType(transaction) == LockType.NL){
-            LockContext currParent = parent;
+            LockContext currParent = parentContext();
             while(currParent != null){
 
                 // if parent is S, SIX, or X lock
@@ -268,22 +392,22 @@ public class LockContext {
                 }
 
                 //check next parent
-                currParent = currParent.parent;
+                currParent = currParent.parentContext();
             }
         }
 
         // If IX check for an SIX ancestor
         if(getExplicitLockType(transaction) == LockType.IX){
-            LockContext currParent = parent;
+            LockContext currParent = parentContext();
             while(currParent != null){
 
                 // if parent is S, SIX, or X lock
                 if (currParent.getExplicitLockType(transaction) == LockType.SIX){
-                    return LockType.S;
+                    return LockType.SIX;
                 }
 
                 //check next parent
-                currParent = currParent.parent;
+                currParent = currParent.parentContext();
             }
         }
 
