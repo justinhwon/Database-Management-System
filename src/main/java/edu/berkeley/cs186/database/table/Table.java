@@ -314,6 +314,9 @@ public class Table implements BacktrackingIterable<Record> {
     public synchronized Record updateRecord(List<DataBox> values, RecordId rid) {
         // TODO(hw4_part2): modify for smarter locking
 
+        //get X lock because will write anyway
+        LockUtil.ensureSufficientLockHeld(lockContext.childContext(rid.getPageNum()), LockType.X);
+
         validateRecordId(rid);
 
         Record newRecord = schema.verify(values);
@@ -338,6 +341,10 @@ public class Table implements BacktrackingIterable<Record> {
      */
     public synchronized Record deleteRecord(RecordId rid) {
         // TODO(hw4_part2): modify for smarter locking
+
+        //LockUtil.ensureSufficientLockHeld(lockContext.childContext(name, numRecords), LockType.X);
+        // get X lock because will write anyway
+        LockUtil.ensureSufficientLockHeld(lockContext.childContext(rid.getPageNum()), LockType.X);
 
         validateRecordId(rid);
 

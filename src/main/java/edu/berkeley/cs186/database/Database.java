@@ -1028,6 +1028,31 @@ public class Database implements AutoCloseable {
         @Override
         public void close() {
             // TODO(hw4_part2): release locks held by the transaction
+            // get the locks on current transaction
+            List<Lock> locks = lockManager.getLocks(this);
+            // reverse the list to get smaller granularity first
+            Collections.reverse(locks);
+
+            // try to release locks in order until empty
+            while (!locks.isEmpty()){
+                // get first element
+                Lock lock = locks.get(0);
+
+                // try to release a lock
+                try{
+                    // try to release first lock
+                    locks.remove(0);
+                    LockContext lockContext = LockContext.fromResourceName(lockManager, lock.name);
+                    lockContext.release(this);
+                }
+                // if violated multi-granularity constraint
+                catch(InvalidLockException error){
+                    // put lock back to end of list if failed
+                    locks.add(lock);
+                }
+
+            }
+
             return;
         }
 

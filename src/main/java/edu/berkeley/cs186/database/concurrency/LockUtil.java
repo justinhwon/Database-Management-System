@@ -39,8 +39,8 @@ public class LockUtil {
 
             // if new lock is type S
             if (lockType == LockType.S){
-                // if there's already intent lock in parent, just acquire the lock
-                if (LockType.canBeParentLock(lockContext.parentContext().getExplicitLockType(transaction), lockType)){
+                // if there's already intent lock in parent or no parent, just acquire the lock
+                if (lockContext.parentContext() == null || LockType.canBeParentLock(lockContext.parentContext().getExplicitLockType(transaction), lockType)){
                     lockContext.acquire(transaction, lockType);
                 }
                 // if no parent intent locks, set intent locks on all parents as necessary
@@ -70,8 +70,8 @@ public class LockUtil {
             }
             // if new lock type is X
             else if (lockType == LockType.X){
-                // if there's already intent lock in parent, just promote the lock
-                if (lockContext.parentContext().getExplicitLockType(transaction) == LockType.IX){
+                // if there's already intent lock in parent or no parent, just acquire the lock
+                if (lockContext.parentContext() == null || lockContext.parentContext().getExplicitLockType(transaction) == LockType.IX){
                     lockContext.acquire(transaction, lockType);
                 }
                 // if no parent intent locks, set intent locks on all parents as necessary
