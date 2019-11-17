@@ -88,6 +88,13 @@ public class BPlusTree {
     public BPlusTree(BufferManager bufferManager, BPlusTreeMetadata metadata, LockContext lockContext) {
         // TODO(hw4_part2): B+ tree locking
 
+        // prevent any child locks
+        lockContext.disableChildLocks();
+
+        // exclusive-lock whole B-plus tree
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.X);
+        // end of hw4p2 code
+
         // Sanity checks.
         if (metadata.getOrder() < 0) {
             String msg = String.format(
@@ -136,11 +143,18 @@ public class BPlusTree {
      */
     public Optional<RecordId> get(DataBox key) {
         typecheck(key);
+
+        // TODO(hw4_part2): B+ tree locking
+        // lock whole B-plus tree to read-only
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.S);
+        // end of hw4p2 code ( was originally right above "return retVal" )
+
+
         // TODO(hw2): implement
         LeafNode retLeaf = root.get(key);
         Optional<RecordId> retVal = retLeaf.getKey(key);
 
-        // TODO(hw4_part2): B+ tree locking
+
 
         return retVal;
         //return Optional.empty();
@@ -156,6 +170,10 @@ public class BPlusTree {
     public Iterator<RecordId> scanEqual(DataBox key) {
         typecheck(key);
         // TODO(hw4_part2): B+ tree locking
+
+        // lock whole B-plus tree to read-only
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.S);
+        // end of hw4p2 code
 
         Optional<RecordId> rid = get(key);
         if (rid.isPresent()) {
@@ -196,6 +214,10 @@ public class BPlusTree {
         // TODO(hw2): Return a BPlusTreeIterator.
         // TODO(hw4_part2): B+ tree locking
 
+        // lock whole B-plus tree to read-only
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.S);
+        // end of hw4p2 code
+
         LeafNode currLeaf = root.getLeftmostLeaf();
         return new BPlusTreeIterator(currLeaf, currLeaf.scanAll());
     }
@@ -227,6 +249,11 @@ public class BPlusTree {
         typecheck(key);
         // TODO(hw2): Return a BPlusTreeIterator.
         // TODO(hw4_part2): B+ tree locking
+
+        // lock whole B-plus tree to read-only
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.S);
+        // end of hw4p2 code
+
         LeafNode currLeaf = root.get(key);
         return new BPlusTreeIterator(currLeaf, currLeaf.scanGreaterEqual(key));
     }
@@ -243,6 +270,10 @@ public class BPlusTree {
     public void put(DataBox key, RecordId rid) {
         typecheck(key);
         // TODO(hw2): implement
+
+        // exclusive-lock whole B-plus tree
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.X);
+        // end of hw4p2 code
 
         /*
         //raise exception if key already exists
@@ -297,6 +328,10 @@ public class BPlusTree {
         // TODO(hw2): implement
         // TODO(hw4_part2): B+ tree locking
 
+        // exclusive-lock whole B-plus tree
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.X);
+        // end of hw4p2 code
+
         // only bulkLoad on empty trees
         if (scanAll().hasNext()) {
             throw new BPlusTreeException("Tree is not empty");
@@ -343,6 +378,10 @@ public class BPlusTree {
         // TODO(hw2): implement
         // TODO(hw4_part2): B+ tree locking
 
+        // exclusive-lock whole B-plus tree
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.X);
+        // end of hw4p2 code
+
         root.remove(key);
 
         return;
@@ -355,6 +394,11 @@ public class BPlusTree {
      */
     public String toSexp() {
         // TODO(hw4_part2): B+ tree locking
+
+        // S-lock whole B-plus tree
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.S);
+        // end of hw4p2 code
+
         return root.toSexp();
     }
 
@@ -372,6 +416,11 @@ public class BPlusTree {
      */
     public String toDot() {
         // TODO(hw4_part2): B+ tree locking
+
+        // s-lock whole B-plus tree
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.S);
+        // end of hw4p2 code
+
         List<String> strings = new ArrayList<>();
         strings.add("digraph g {" );
         strings.add("  node [shape=record, height=0.1];");
