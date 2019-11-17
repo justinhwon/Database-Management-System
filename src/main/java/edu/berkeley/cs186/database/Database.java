@@ -823,6 +823,10 @@ public class Database implements AutoCloseable {
         public Iterator<Record> sortedScan(String tableName, String columnName) {
             // TODO(hw4_part2): scan locking
 
+            // lock entire tables when needed
+            LockContext tableContext = getTableContext(tableName);
+            LockUtil.ensureSufficientLockHeld(tableContext, LockType.S);
+
             Table tab = getTable(tableName);
             try {
                 Pair<String, BPlusTree> index = resolveIndexFromName(tableName, columnName);
@@ -841,6 +845,10 @@ public class Database implements AutoCloseable {
         @Override
         public Iterator<Record> sortedScanFrom(String tableName, String columnName, DataBox startValue) {
             // TODO(hw4_part2): scan locking
+
+            // lock entire tables when needed
+            LockContext tableContext = getTableContext(tableName);
+            LockUtil.ensureSufficientLockHeld(tableContext, LockType.S);
 
             Table tab = getTable(tableName);
             Pair<String, BPlusTree> index = resolveIndexFromName(tableName, columnName);
