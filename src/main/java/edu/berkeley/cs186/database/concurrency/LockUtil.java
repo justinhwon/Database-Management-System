@@ -89,7 +89,10 @@ public class LockUtil {
                     // if not a sufficient intent lock, update to IX
                     for (LockContext parent:parentContexts){
                         //if (!LockType.canBeParentLock(parent.getExplicitLockType(transaction), lockType)){
-                        if(parent.getExplicitLockType(transaction) != LockType.IX){
+                        if(parent.getExplicitLockType(transaction) == LockType.IS){
+                            parent.promote(transaction, LockType.IX);
+                        }
+                        else if(parent.getExplicitLockType(transaction) != LockType.IX){
                             parent.acquire(transaction, LockType.IX);
                         }
                     }
@@ -100,7 +103,107 @@ public class LockUtil {
             }
         }
 
-        // CASE 2
+        // CASE 2 - current lock IS
+        else if(lockContext.getEffectiveLockType(transaction) == LockType.IS){
+            // if requesting S lock, just escalate
+            if (lockType == LockType.S){
+                lockContext.escalate(transaction);
+            }
+            // if requesting X lock, escalate, update parents, then promote to X
+            else{
+                lockContext.escalate(transaction);
+
+                // create list of parents
+                List<LockContext> parentContexts = new ArrayList<>();
+
+                // get list of parents from top to bottom
+                LockContext currParent = lockContext.parentContext();
+                while (currParent != null){
+                    parentContexts.add(0, currParent);
+                    currParent = currParent.parentContext();
+                }
+
+                // if parent not a sufficient intent lock, update to IX
+                for (LockContext parent:parentContexts){
+                    //if (!LockType.canBeParentLock(parent.getExplicitLockType(transaction), lockType)){
+                    if(parent.getExplicitLockType(transaction) != LockType.IX && parent.getExplicitLockType(transaction) != LockType.SIX){
+                        parent.promote(transaction, LockType.IX);
+                    }
+                }
+
+                lockContext.promote(transaction, LockType.X);
+            }
+
+        }
+
+        // CASE 2 - current lock IX
+        else if(lockContext.getEffectiveLockType(transaction) == LockType.IX){
+            // if requesting X lock, just escalate
+            if (lockType == LockType.X){
+                lockContext.escalate(transaction);
+            }
+            // if requesting S lock, then promote to SIX
+            else{
+                lockContext.promote(transaction, LockType.SIX);
+            }
+
+        }
+
+        // CASE 3 - current lock S (then upgrade to X)
+        else if(lockContext.getEffectiveLockType(transaction) == LockType.S){
+            // if explicit lock is S update parents then promote to X
+            if(lockContext.getExplicitLockType(transaction) == LockType.S){
+
+                // create list of parents
+                List<LockContext> parentContexts = new ArrayList<>();
+
+                // get list of parents from top to bottom
+                LockContext currParent = lockContext.parentContext();
+                while (currParent != null){
+                    parentContexts.add(0, currParent);
+                    currParent = currParent.parentContext();
+                }
+
+                // if parent not a sufficient intent lock, update to IX
+                for (LockContext parent:parentContexts){
+                    //if (!LockType.canBeParentLock(parent.getExplicitLockType(transaction), lockType)){
+                    if(parent.getExplicitLockType(transaction) != LockType.IX && parent.getExplicitLockType(transaction) != LockType.SIX){
+                        parent.promote(transaction, LockType.IX);
+                    }
+                }
+
+                lockContext.promote(transaction, LockType.X);
+            }
+            // if explicit not S then is NL so set all parents to IX and set lock to S
+            else{
+                // create list of parents
+                List<LockContext> parentContexts = new ArrayList<>();
+
+                // get list of parents from top to bottom
+                LockContext currParent = lockContext.parentContext();
+                while (currParent != null){
+                    parentContexts.add(0, currParent);
+                    currParent = currParent.parentContext();
+                }
+
+                // if parent not a sufficient intent lock, update to IX
+                for (LockContext parent:parentContexts){
+                    //if (!LockType.canBeParentLock(parent.getExplicitLockType(transaction), lockType)){
+                    if(parent.getExplicitLockType(transaction) != LockType.IX && parent.getExplicitLockType(transaction) != LockType.SIX){
+                        parent.promote(transaction, LockType.IX);
+                    }
+                }
+
+                //acquire the original lock you were going for
+                lockContext.acquire(transaction, lockType.X);
+            }
+        }
+
+        // CASE 3 - current lock is SIX (then upgrade to X)
+        else if(lockContext.getEffectiveLockType(transaction) == LockType.SIX){
+
+            lockContext.escalate(transaction);
+        }
 
         return;
     }

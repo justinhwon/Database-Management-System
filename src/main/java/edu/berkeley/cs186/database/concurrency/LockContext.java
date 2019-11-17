@@ -242,7 +242,7 @@ public class LockContext {
             List<ResourceName> releaseLocks = new ArrayList<>();
             List<Lock> locks = lockman.getLocks(transaction);
             for(Lock lock:locks){
-                if(lock.name.isDescendantOf(getResourceName())){
+                if(lock.name.isDescendantOf(getResourceName()) && (lock.lockType == LockType.S || lock.lockType == LockType.IS)){
                     releaseLocks.add(lock.name);
                 }
             }
