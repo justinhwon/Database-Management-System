@@ -241,4 +241,47 @@ public class LockUtil {
     }
 
     // TODO(hw4_part2): add helper methods as you see fit
+
+    public static void prepNewTable(LockContext lockContext, LockType lockType) {
+
+        TransactionContext transaction = TransactionContext.getTransaction();
+
+        // if there's already intent lock, then good to go
+        if (lockContext == null || lockContext.getExplicitLockType(transaction) == LockType.IX){
+            return;
+        }
+        // already X level lock (effectively), then good to go
+        else if (lockContext.getEffectiveLockType(transaction) == LockType.X){
+            return;
+        }
+        // if no parent intent locks, set intent locks on all parents as necessary
+        else {
+            // create list of parents
+            List<LockContext> parentContexts = new ArrayList<>();
+
+            // get list of parents from top to bottom
+            LockContext currParent = lockContext;
+            while (currParent != null) {
+                parentContexts.add(0, currParent);
+                currParent = currParent.parentContext();
+            }
+
+            // if not a sufficient intent lock, update to IX
+            for (LockContext parent : parentContexts) {
+                //if (!LockType.canBeParentLock(parent.getExplicitLockType(transaction), lockType)){
+                if (parent.getExplicitLockType(transaction) == LockType.IS) {
+                    parent.promote(transaction, LockType.IX);
+                }
+                // promote to SIX if parent is S
+                else if (parent.getExplicitLockType(transaction) == LockType.S){
+                    parent.promote(transaction, LockType.SIX);
+                }
+                // if no lock get IX
+                else if (parent.getExplicitLockType(transaction) != LockType.IX && parent.getExplicitLockType(transaction) != LockType.SIX) {
+                    parent.acquire(transaction, LockType.IX);
+                }
+            }
+        }
+    }
+
 }
