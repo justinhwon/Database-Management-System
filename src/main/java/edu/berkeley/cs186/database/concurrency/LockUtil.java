@@ -24,6 +24,31 @@ public class LockUtil {
 
         TransactionContext transaction = TransactionContext.getTransaction(); // current transaction
 
+
+        // AUTO-ESCALATE FUNCTIONALITY
+
+        // if parent exists, check if escalatable and whether you should escalate (only tables are escalatable)
+        if(lockContext.parentContext() != null) {
+            boolean escAble = lockContext.parentContext().getAutoEscalatable();
+
+            // if the parent is escalatable (guaranteed to be a table), check if you should escalate
+            if(escAble){
+
+                // only escalate if the table has at least 10 pages
+                if (lockContext.parentContext().capacity() >= 10) {
+
+                    // if at least 20% of pages held, escalate the parent
+                    if (lockContext.parentContext().saturation(transaction) >= 0.20) {
+
+                        lockContext.parentContext().escalate(transaction);
+
+                    }
+                }
+            }
+        }
+
+        // END OF AUTO-ESCALATE FUNCTIONALITY
+
         //If the current transaction is null (i.e. there is no current transaction), this method should do nothing.
         if (transaction == null){
             return;
@@ -190,7 +215,14 @@ public class LockUtil {
                 for (LockContext parent:parentContexts){
                     //if (!LockType.canBeParentLock(parent.getExplicitLockType(transaction), lockType)){
                     if(parent.getExplicitLockType(transaction) != LockType.IX && parent.getExplicitLockType(transaction) != LockType.SIX){
-                        parent.promote(transaction, LockType.IX);
+                        // promote to SIX if parent is S
+                        if (parent.getExplicitLockType(transaction) == LockType.S){
+                            parent.promote(transaction, LockType.SIX);
+                        }
+                        // else promote to IX
+                        else{
+                            parent.promote(transaction, LockType.IX);
+                        }
                     }
                 }
 

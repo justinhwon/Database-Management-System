@@ -86,11 +86,21 @@ public class PageDirectory implements HeapFile {
     public PageDirectory(BufferManager bufferManager, int partNum, long pageNum,
                          short emptyPageMetadataSize, LockContext lockContext) {
         // TODO(hw4_part2): update table capacity
+
         this.bufferManager = bufferManager;
         this.partNum = partNum;
         this.emptyPageMetadataSize = emptyPageMetadataSize;
         this.lockContext = lockContext;
         this.firstHeader = new HeaderPage(pageNum, 0, true);
+
+
+        // START HW4PART2
+        // set capacity to numDataPages
+        lockContext.capacity(getNumDataPages());
+        // enable auto-escalation by default for tables
+        lockContext.enableAutoEsc();
+        // end of HW4Part2
+
     }
 
     @Override
@@ -360,6 +370,11 @@ public class PageDirectory implements HeapFile {
                     page.getBuffer().putInt(pageDirectoryId).putInt(headerOffset).putShort(unusedSlot);
 
                     ++this.numDataPages;
+
+                    // start part 2
+                    //increase capacity by 1 when loading a new page
+                    lockContext.capacity(lockContext.capacity() + 1);
+                    // end of part 2
 
                     return page;
                 }

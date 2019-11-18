@@ -13,6 +13,26 @@ import java.util.concurrent.ConcurrentHashMap;
  * methods at a certain point in the hierarchy (database, table X, etc.)
  */
 public class LockContext {
+
+    // NEW FIELDS ADDED FOR HW4PART2
+
+    // variable that determines whether escalatable
+    protected boolean autoEscalatable = false;
+    // get autoEscalatable variable
+    public boolean getAutoEscalatable(){
+        return this.autoEscalatable;
+    }
+    // set autoEscalatable to true
+    public void enableAutoEsc(){
+        this.autoEscalatable = true;
+    }
+    // set autoEscalatable to false
+    public void disableAutoEsc(){
+        this.autoEscalatable = false;
+    }
+
+    // END OF NEW FIELDS ADDED FOR HW4PART2
+
     // You should not remove any of these fields. You may add additional fields/methods as you see fit.
 
     // The underlying lock manager.
